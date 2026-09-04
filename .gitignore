@@ -1,0 +1,26 @@
+# zależności
+node_modules/
+.pnpm-store/
+
+# build
+dist/
+*.local
+
+# narzędzia
+.vite/
+coverage/
+*.tsbuildinfo
+harness/wyniki/
+test-results/
+playwright-report/
+
+# edytory i system
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# logi
+*.log
