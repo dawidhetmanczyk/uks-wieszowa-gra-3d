@@ -9,7 +9,7 @@
  * Użycie: pnpm harness:zrzuty [--url <adres>] [--headless] [--build]
  */
 import { join, relative } from 'node:path';
-import type { Page } from 'playwright';
+import type { Browser, Page } from 'playwright';
 import type { ContextSpec, HitKind, Phase, PlayerId } from './wspolne';
 import {
   DESKTOP_SPEC,
@@ -37,6 +37,12 @@ const RESET_TIMEOUT_MS = 2000;
 const RALLY_TIMEOUT_MS = 15_000;
 /** Wymiana Nowicjusz vs Nowicjusz na seedzie 11 trwała 39 s (pomiar 2026-09-04) – stąd zapas. */
 const POINT_TIMEOUT_MS = 60_000;
+/**
+ * Zrzut „punkt” tuż po wejściu w fazę point łapał toast HUD w trakcie 180 ms animacji
+ * (krycie ~0,3). Pauza po punkcie trwa 1,5 s (POINT_FREEZE_S), więc 300 ms zapasu mieści
+ * się w niej z dużym marginesem.
+ */
+const POINT_SETTLE_MS = 300;
 
 type ShotName = 'serwis' | 'wymiana' | 'punkt';
 
@@ -63,11 +69,14 @@ interface Shot {
 async function main(): Promise<void> {
   const args = parseArgs();
   const server = await ensureServer(args);
-  const browser = await launchBrowser(args.headless);
   const shots: Shot[] = [];
   const errorsByScreen: Record<string, string[]> = {};
   let version = '?';
+  // Przeglądarka wewnątrz try: gdy start Chromium padnie, finally i tak ubije serwer
+  // podglądu – inaczej vite preview zostawał żywy i skrypt wisiał.
+  let browser: Browser | null = null;
   try {
+    browser = await launchBrowser(args.headless);
     for (const spec of [mobileSpec(2), DESKTOP_SPEC]) {
       const screen = `${spec.width}x${spec.height}`;
       const { context, page, errors } = await openPage(browser, spec);
@@ -79,7 +88,7 @@ async function main(): Promise<void> {
       }
     }
   } finally {
-    await browser.close();
+    await browser?.close();
     await server.stop();
   }
 
@@ -188,6 +197,8 @@ async function captureScreen(
   } catch {
     pointNotes.push(`brak punktu w ${POINT_TIMEOUT_MS / 1000} s`);
   }
+  // Toast po punkcie ma zdążyć się w pełni pokazać – patrz POINT_SETTLE_MS.
+  await sleep(POINT_SETTLE_MS);
   const point = await capture(page, screen, 'punkt');
   point.notes.push(...pointNotes);
   if (point.state && point.state.phase !== 'point' && point.state.phase !== 'set-over') {

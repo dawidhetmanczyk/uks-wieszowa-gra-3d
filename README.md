@@ -17,18 +17,18 @@ Stan: **faza F0 – prototyp sterowania i kamery** (kapsuły i prostokąty, bez 
 | `pnpm dev` | serwer deweloperski z `--host` (telefon w tej samej sieci: `http://<ip-komputera>:5173`) |
 | `pnpm build` | build produkcyjny do `dist/` z raportem rozmiaru gzip |
 | `pnpm preview` | podgląd builda na porcie 4173 |
-| `pnpm test` | testy sim i ai w Node (Vitest) |
+| `pnpm test` | testy sim, ai, input i narzędzi (skan granic) w Node (Vitest) |
 | `pnpm test:watch` | testy w trybie watch |
 | `pnpm typecheck` | `tsc` dla trzech konfiguracji: aplikacja, sim/ai bez DOM, node (harness) |
 | `pnpm lint` | ESLint (w `src/sim` i `src/ai` zakaz `three`, `window`, `document`, `Math.random`, `Date.now`) |
 | `pnpm format` / `pnpm format:check` | Prettier |
-| `pnpm check:granice` | skan importów `src/sim` i `src/ai`: zero three/DOM/losowości (CLAUDE.md) |
+| `pnpm check:granice` | skan granic modułów (CLAUDE.md): `src/sim` i `src/ai` bez three/DOM/losowości, sim nie importuje ai; `ai`, `input`, `ui`, `render`, `loop` importują sim tylko z `src/sim/index` |
 | `pnpm check` | wszystko powyżej po kolei |
 | `pnpm harness:perf` | 60 s AI vs AI w 390×844 z CPU 4×: fps p95, draw calls, trójkąty |
 | `pnpm harness:przyjecie` | 50 prób przyjęcia serwisu tapnięciem w oknie czasowym: odsetek udanych |
 | `pnpm harness:zrzuty` | zrzuty 390×844 i 1280×720 do `docs/zrzuty/` |
 
-Harness przyjmuje `--headless` (domyślnie okno z GPU, bo headless Chromium renderuje WebGL programowo), `--url <adres>` (bez startu własnego serwera), `--sekundy N`, `--proby N`, `--seed N`, `--build`.
+Harness przyjmuje `--headless` (domyślnie okno z GPU, bo headless Chromium renderuje WebGL programowo), `--url <adres>` (bez startu własnego serwera), `--sekundy N`, `--proby N`, `--seed N`, `--build`; `harness:perf` dodatkowo `--vsync` (domyślnie Chromium startuje bez limitu klatek, żeby mierzyć koszt klatki, nie częstotliwość ekranu).
 
 ## Parametry URL
 
@@ -36,6 +36,15 @@ Harness przyjmuje `--headless` (domyślnie okno z GPU, bo headless Chromium rend
 - `?ai=1` – AI vs AI (do pomiarów),
 - `?serwis=1` – serwują czerwoni,
 - `?fps=1` – licznik fps w HUD.
+
+Przełączniki jakości do pomiaru fps na telefonie (domyślnie: pixel ratio do 2, antialiasing i cienie włączone):
+
+- `?jakosc=niska` – komplet dla telefonu klasy średniej: pixel ratio 1, bez antialiasingu, bez cieni (to samo co `?dpr=1&aa=0&cien=0`),
+- `?dpr=1` – górna granica pixel ratio (liczba 0–4, także ułamek, np. `1.5`),
+- `?aa=0` – bez antialiasingu (MSAA),
+- `?cien=0` – bez mapy cieni.
+
+Pojedyncze parametry nadpisują `jakosc`, więc da się mierzyć wpływ każdego z osobna (np. `?jakosc=niska&cien=1`). Ustawienia, z którymi gra rysuje, zwraca w konsoli `window.__sw3d.renderOptions()`.
 
 ## Sterowanie (F0)
 
@@ -52,7 +61,8 @@ src/render/  Three.js: kamera, kapsuły, boisko, znaczniki
 src/input/   dotyk, klawiatura → komendy
 src/ui/      HUD
 src/loop/    pętla 1/120 s z akumulatorem, haki dev (window.__sw3d)
-tests/       Vitest (Node)
+tests/       Vitest (Node): sim, ai, input, narzedzia (skan granic na próbkach)
 harness/     skrypty Playwright
+scripts/     check-granice.mjs – skan granic modułów (reguły eksportowane do testu)
 docs/        koncepcja, fazy, architektura, raporty, zrzuty
 ```

@@ -20,16 +20,33 @@
         margin: 0;
         height: 100%;
         background: #0a2540;
+        /* Biały tekst już tu, nie dopiero w style.css – bez JS komunikat <noscript>
+           byłby czarny na granacie (kontrast 1,35:1). */
+        color: #ffffff;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
         overflow: hidden;
         touch-action: none;
         -webkit-user-select: none;
         user-select: none;
       }
+
+      noscript p {
+        margin: 0;
+        padding: 24px;
+        text-align: center;
+        font-size: 16px;
+        line-height: 1.45;
+      }
     </style>
   </head>
   <body>
-    <main id="gra" aria-label="Set Wieszowa 3D">
-      <canvas id="scena" tabindex="0" aria-label="Boisko do siatkówki 2 na 2"></canvas>
+    <main id="game" aria-label="Set Wieszowa 3D">
+      <canvas id="scene" tabindex="0" aria-label="Boisko do siatkówki 2 na 2"></canvas>
     </main>
     <noscript><p>Gra potrzebuje włączonego JavaScriptu.</p></noscript>
     <script type="module" src="/src/main.ts"></script>

@@ -14,7 +14,7 @@ import {
   type TeamId,
 } from '../sim/index';
 import { aiCommands, createAi, type AiState } from '../ai/index';
-import { createRenderer, type GameRenderer } from '../render/index';
+import { createRenderer, type GameRenderer, type RenderOptions } from '../render/index';
 import { createInput, KEY_NEW_SET, type InputController } from '../input/index';
 import { createHud, type Hud } from '../ui/index';
 import {
@@ -27,6 +27,7 @@ import {
 import { createAccumulator, createFrameDriver, createFrameTimeBuffer, drainSteps } from './petla';
 
 export type { DevHooks, NewSetOptions, ReachWindowSeconds, RenderInfo } from './haki';
+export type { RenderOptions, ResolvedRenderOptions } from '../render/index';
 export { parseUrlParams, daySeed, type UrlParams } from './url';
 
 export interface GameOptions {
@@ -37,6 +38,11 @@ export interface GameOptions {
   servingTeam: TeamId;
   /** Licznik fps w HUD (?fps=1). Rozszerzenie F0 poza kontrakt, opcjonalne. */
   showFps?: boolean;
+  /**
+   * Przełączniki jakości (?jakosc=niska, ?dpr=, ?aa=, ?cien=) do pomiarów fps na telefonie.
+   * Brak pola = domyślne renderu. Rozszerzenie F0 poza kontrakt, opcjonalne.
+   */
+  render?: RenderOptions;
 }
 
 export interface Game {
@@ -74,7 +80,7 @@ export function startGame(opts: GameOptions): Game {
   const { canvas, hudRoot } = opts;
   const showFps = opts.showFps ?? false;
 
-  const renderer: GameRenderer = createRenderer(canvas);
+  const renderer: GameRenderer = createRenderer(canvas, opts.render);
   // Getter zamiast wartości: input pyta o aktywnego w chwili zdarzenia, nie w chwili poll.
   const input: InputController = createInput(canvas, () => state.active);
   const hud: Hud = createHud(
@@ -154,7 +160,7 @@ export function startGame(opts: GameOptions): Game {
     }
   }
 
-  // Rozmiar: mierzymy kontener (#gra, position: fixed; inset: 0), nie kanwę – Three przy
+  // Rozmiar: mierzymy kontener (#game, position: fixed; inset: 0), nie kanwę – Three przy
   // setSize wpisuje kanwie style width/height w px, więc jej clientWidth przestaje podążać
   // za oknem i ResizeObserver na kanwie nigdy nie zgłosiłby zmiany. Porównanie z poprzednimi
   // wartościami chroni przed pętlą resize → setSize → resize.
@@ -195,6 +201,7 @@ export function startGame(opts: GameOptions): Game {
     resetFrameTimes: () => frameTimes.reset(),
     renderInfo: () => renderer.info(),
     reachWindow: (player) => reachWindowInSeconds(state, player),
+    renderOptions: () => renderer.options(),
   };
   const uninstallHooks = installDevHooks(hooks);
 

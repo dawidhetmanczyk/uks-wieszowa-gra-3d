@@ -57,6 +57,7 @@ export function awardPoint(state: SimState, winner: TeamId, reason: PointReason)
     p.swingStartTick = -1;
     p.swingReleaseTick = -1;
     p.swingPower = null;
+    p.jumpSwing = false;
   }
 
   const setWinner = setWinnerFor(state.score.points);

@@ -15,7 +15,7 @@ import {
   quantize,
 } from '../../src/input/gesty';
 import { coalesceCommands } from '../../src/input/index';
-import type { Command } from '../../src/sim/types';
+import type { Command } from '../../src/sim/index';
 
 describe('classifyGesture – joystick vs zamach vs tapnięcie', () => {
   it('przed 120 ms i bez ruchu jest nieznany', () => {
@@ -85,9 +85,14 @@ describe('keyboardVector – klawisze → move', () => {
 });
 
 describe('cel – aimFromOffset i aimFromArrows', () => {
-  it('mały dryf palca to brak celu', () => {
+  it('mały dryf palca to brak celu – próg DEADZONE_PX, nie luźniejszy AIM_DEADZONE z sim', () => {
     expect(aimFromOffset(0, 0, 0)).toBeNull();
-    expect(aimFromOffset(5, -5, 0)).toBeNull(); // 7 px / 60 = 0,12 < 0,15
+    expect(aimFromOffset(5, -5, 0)).toBeNull(); // 7,1 px
+    // 11,2 px: sim (0,15 · 60 = 9 px) dałby już cel, ale klasyfikacja mówi „palec stoi”.
+    expect(aimFromOffset(10, 5, 0)).toBeNull();
+    // Dokładnie 12 px to jeszcze brak celu (próg ostry jak w classifyGesture), 13 px daje cel.
+    expect(aimFromOffset(DEADZONE_PX, 0, 0)).toBeNull();
+    expect(aimFromOffset(13, 0, 0)).not.toBeNull();
   });
 
   it('60 px w prawo = cel po prawej stronie ekranu (x < 0) w połowie głębokości połowy rywali', () => {

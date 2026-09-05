@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { BALL_R, BODY_IMMUNITY_S, PLAYER_H, PLAYER_R, TICK_HZ, type SimState } from '../../src/sim';
+import {
+  BALL_R,
+  BODY_IMMUNITY_S,
+  PLAYER_H,
+  PLAYER_R,
+  TICK_HZ,
+  type SimEvent,
+  type SimState,
+} from '../../src/sim';
 import {
   ballCapsuleDistance,
   launchBallTo,
@@ -9,6 +17,7 @@ import {
   placePlayer,
   run,
   setRallyBall,
+  type TickEvent,
 } from './pomocnicze';
 
 const IMMUNITY_TICKS = Math.round(BODY_IMMUNITY_S * TICK_HZ);
@@ -57,18 +66,42 @@ function runChecked(state: SimState, ticks: number, commandsAt?: Parameters<type
   );
 }
 
+/** Jak runChecked, ale zatrzymuje się na pierwszym zdarzeniu danego typu (cały tick trafia do listy). */
+function runCheckedUntil(state: SimState, type: SimEvent['type'], maxTicks: number) {
+  const events: TickEvent[] = [];
+  for (let i = 0; i < maxTicks; i++) {
+    const tick = runChecked(state, 1);
+    events.push(...tick);
+    const found = tick.find((e) => e.event.type === type);
+    if (found) return { found, events, ticks: i + 1 };
+  }
+  return { found: null, events, ticks: maxTicks };
+}
+
 describe('kolizje – brak przenikania', () => {
   it('piłka spuszczona na głowę stojącego zawodnika odbija się i liczy jako bierny kontakt', () => {
     const state = makeState(21);
     placePlayer(state, 0, -1, -5);
     setRallyBall(state, { x: -1 + 0.05, y: 3.0, z: -5 }, { x: 0, y: 0, z: 0 }, { lastToucher: 2 });
-    const events = runChecked(state, 240);
-    const contacts = ofType(events, 'contact');
-    expect(contacts.length).toBeGreaterThanOrEqual(1);
-    expect(contacts[0]!.event.kind).toBe('passive');
-    expect(contacts[0]!.event.player).toBe(0);
-    expect(contacts[0]!.event.quality).toBe(0);
-    expect(state.rally.lastToucher === 0 || state.rally.phase === 'point').toBe(true);
+    const TOTAL = 240;
+    const { found, events, ticks } = runCheckedUntil(state, 'contact', TOTAL);
+    expect(found).not.toBeNull();
+    const contact = ofType(events, 'contact');
+    expect(contact).toHaveLength(1);
+    expect(contact[0]!.event.kind).toBe('passive');
+    expect(contact[0]!.event.player).toBe(0);
+    expect(contact[0]!.event.quality).toBe(0);
+    expect(contact[0]!.event.touchNo).toBe(1);
+    // Zaraz po kontakcie księgowość jest jednoznaczna: pierwsze odbicie zawodnika 0, akcja trwa.
+    expect(state.rally.lastToucher).toBe(0);
+    expect(state.rally.touches).toBe(1);
+    expect(state.rally.phase).toBe('rally');
+    expect(ofType(events, 'point')).toHaveLength(0);
+    // Piłka odbiła się od głowy w górę (nie przeniknęła i nie przykleiła się).
+    expect(state.ball.vel.y).toBeGreaterThan(0);
+    expect(state.ball.pos.y).toBeGreaterThan(PLAYER_H);
+    // Reszta przebiegu tylko z niezmiennikami – co dalej z piłką, nie jest tu tematem.
+    runChecked(state, TOTAL - ticks);
   });
 
   it('piłka wystrzelona w siatkę z obu stron odbija się na tę samą stronę', () => {

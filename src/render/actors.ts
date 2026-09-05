@@ -73,7 +73,9 @@ export function createActors(): Actors {
   const ballGeometry = new SphereGeometry(BALL_R, BALL_WIDTH_SEGMENTS, BALL_HEIGHT_SEGMENTS);
   const ballMaterial = new MeshLambertMaterial({ color: COLOR_BALL });
   const ball = new Mesh(ballGeometry, ballMaterial);
-  ball.castShadow = true;
+  // Bez cienia z mapy: przy 3 m wysokości padał ~1,3 m obok płaskiego koła i obie plamy
+  // konkurowały jako wskazówka „gdzie spadnie”. Jedyną wskazówką jest koło (docs/22 §7).
+  ball.castShadow = false;
   group.add(ball);
 
   const shadowGeometry = new CircleGeometry(BALL_SHADOW_R, BALL_SHADOW_SEGMENTS).rotateX(
@@ -96,8 +98,9 @@ export function createActors(): Actors {
         const mesh = players[id];
         // pos to punkt między stopami; kapsuła ma środek w połowie wysokości.
         mesh.position.set(p.pos.x, p.pos.y + PLAYER_H / 2, p.pos.z);
-        // Odbicie x odwraca znak kąta wokół y (dla kapsuły bez znaczenia, dla modeli w F1 tak).
-        mesh.rotation.y = -p.facing;
+        // Kąt z sim bez zmian – render niczego nie odbija (docs/22 §9 pkt 14). Dla kapsuły
+        // obojętne, ale model glTF w F2 z odwróconym kątem biegałby tyłem.
+        mesh.rotation.y = p.facing;
       }
       const b = state.ball.pos;
       ball.position.set(b.x, b.y, b.z);

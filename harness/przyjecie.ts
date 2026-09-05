@@ -16,9 +16,15 @@
  * (touchscreen.tap), czyli tak, jak na telefonie. „Brak zasięgu” zostaje osobnym
  * powodem porażki: dobieg nie zdążył albo okno nie pojawiło się przed lądowaniem.
  *
+ * Czas liczymy w tickach sim, nie zegarem ściennym: chwila tapu to `swingStartTick`
+ * (tick, w którym sim otworzył okno zamachu), a wejście w zasięg to prognoza zamrożona
+ * na ostatnim odczycie sprzed wejścia. Próby, w których pętla renderu przystanęła
+ * (najdłuższa klatka rAF w próbie > STALL_FRAME_MS), są liczone osobno jako niewiarygodne –
+ * spóźniony tap nie jest wtedy winą sterowania.
+ *
  * Użycie: pnpm harness:przyjecie [--url <adres>] [--headless] [--proby 50] [--seed 7] [--build]
  */
-import type { Page } from 'playwright';
+import type { Browser, Page } from 'playwright';
 import type {
   HitKind,
   LandingPrediction,
@@ -63,11 +69,12 @@ const SERVE_TIMEOUT_MS = 5000;
 const REACH_POLL_MS = 8;
 const REACH_TIMEOUT_MS = 6000;
 /**
- * Skok ticków sim między dwoma odczytami większy niż to = pętla renderu przystanęła
- * (okno w tle, obciążony CPU – pętla nadrabia do 30 kroków na klatkę). Tap i dobieg
- * są wtedy spóźnione nie z winy sterowania, więc próba jest liczona osobno.
+ * Najdłuższa klatka rAF w trakcie próby powyżej tego progu = pętla renderu przystanęła
+ * (okno w tle, GC, obciążony CPU – pętla nadrabia do 30 kroków na klatkę). Tap i dobieg są
+ * wtedy spóźnione nie z winy sterowania, więc próba jest liczona osobno. Mierzone wprost
+ * z bufora `frameTimes()` zerowanego na starcie próby.
  */
-const STALL_TICKS = 12;
+const STALL_FRAME_MS = 100;
 /** Dobieg: cel 0,15 m za punktem przyjęcia (`landing.intercept`, tor na 1,1 m), od strony własnej linii końcowej. */
 const RUN_BEHIND_M = 0.15;
 /** Poniżej tej odległości od celu dobiegu klawisze idą w górę (hamowanie sim dokończy). */
@@ -80,6 +87,17 @@ const HIST_BIN_MS = 50;
 const HIST_MIN_MS = -250;
 const HIST_MAX_MS = 250;
 
+/**
+ * Powody porażki:
+ * - 'brak serwisu' – AI nie zaserwowało w SERVE_TIMEOUT_MS;
+ * - 'brak zasięgu' – dobieg nie zdążył albo okno zasięgu nie pojawiło się przed lądowaniem;
+ * - 'whiff' – tap padł, zanim piłka doleciała, ale okno zamachu wygasło przed kontaktem
+ *   (tap za wcześnie; piłka odbiła się biernie od ciała) albo sim nie zarejestrował
+ *   żadnego kontaktu w SETTLE_MS;
+ * - 'passive' – piłka odbiła się od kapsuły, zanim padł tap (tap za późno albo wcale);
+ * - 'inny zawodnik' – odbił partner-AI;
+ * - 'siatka' / 'aut' – nasze odbicie, ale tor w siatkę / poza własną połowę.
+ */
 type FailReason =
   'brak serwisu' | 'brak zasięgu' | 'whiff' | 'passive' | 'inny zawodnik' | 'siatka' | 'aut';
 
@@ -88,11 +106,16 @@ interface Attempt {
   seed: number;
   success: boolean;
   reason: FailReason | null;
-  /** Pętla renderu przystanęła w trakcie próby (skok > STALL_TICKS między odczytami) – wynik niewiarygodny. */
+  /** Pętla renderu przystanęła w trakcie próby (klatka > STALL_FRAME_MS) – wynik niewiarygodny. */
   stalled: boolean;
+  /** Najdłuższa klatka rAF (ms) w trakcie próby, z bufora frameTimes zerowanego na starcie próby. */
+  maxFrameMs: number | null;
   /** Wylosowane d – ile ms względem wejścia w zasięg miał paść tap (ujemne = przed). */
   plannedDelayMs: number;
-  /** Faktyczne opóźnienie tapu względem wejścia w zasięg, z ticków sim. */
+  /**
+   * Faktyczne opóźnienie tapu względem wejścia w zasięg, z ticków sim: chwila tapu =
+   * `swingStartTick` (tick otwarcia okna zamachu), nie tick sprzed wysłania zdarzenia.
+   */
   tapDelayMs: number | null;
   /** Opóźnienie kontaktu względem wejścia w zasięg, z ticków sim. */
   contactDelayMs: number | null;
@@ -124,8 +147,11 @@ async function main(): Promise<void> {
   for (let i = 0; i < attemptsCount; i++) delays.push((nextFloat(rng) * 2 - 1) * TAP_SPREAD_MS);
 
   const server = await ensureServer(args);
-  const browser = await launchBrowser(args.headless);
+  // Przeglądarka wewnątrz try: gdy start Chromium padnie, finally i tak ubije serwer
+  // podglądu – inaczej vite preview zostawał żywy i skrypt wisiał.
+  let browser: Browser | null = null;
   try {
+    browser = await launchBrowser(args.headless);
     const { page, errors } = await openPage(browser, spec);
     const url = withQuery(server.url, {});
     console.log(`Otwieram ${url} – ${specLabel(spec)}, tryb ${modeLabel(args.headless)}`);
@@ -144,6 +170,7 @@ async function main(): Promise<void> {
         success: false,
         reason: null,
         stalled: false,
+        maxFrameMs: null,
         plannedDelayMs,
         tapDelayMs: null,
         contactDelayMs: null,
@@ -165,6 +192,7 @@ async function main(): Promise<void> {
         servingTeam,
         humanControl: true,
       });
+      await page.evaluate(() => window.__sw3d!.resetFrameTimes());
       try {
         await page.waitForFunction(
           (s) => {
@@ -199,7 +227,7 @@ async function main(): Promise<void> {
         });
       } catch {
         attempt.reason = 'brak serwisu';
-        report(attempt);
+        await finish(page, attempt);
         continue;
       }
 
@@ -212,7 +240,6 @@ async function main(): Promise<void> {
       let tapAtTick: number | null = null;
       let lastActive: PlayerId | null = null;
       let readyToTap = false;
-      let prevTick: number | null = null;
       const held = new Set<string>();
       while (Date.now() < pollDeadline) {
         const snap = await page.evaluate(() => {
@@ -230,8 +257,6 @@ async function main(): Promise<void> {
             pointReason: s.rally.pointReason,
           };
         });
-        if (prevTick !== null && snap.tick - prevTick > STALL_TICKS) attempt.stalled = true;
-        prevTick = snap.tick;
         attempt.phaseAfter = snap.phase;
         attempt.pointReason = snap.pointReason;
         if (snap.phase === 'rally') {
@@ -282,12 +307,12 @@ async function main(): Promise<void> {
       }
       await applyKeys(page, held, new Set());
       if (attempt.reason) {
-        report(attempt);
+        await finish(page, attempt);
         continue;
       }
       if (!readyToTap || enterTick === null) {
         attempt.reason = 'brak zasięgu';
-        report(attempt);
+        await finish(page, attempt);
         continue;
       }
 
@@ -329,15 +354,19 @@ async function main(): Promise<void> {
       } else {
         attempt.contact = pick(lc);
         attempt.contactDelayMs = ((lc.tick - enterTick) / TICK_HZ) * 1000;
-        if (lc.kind === 'passive') attempt.reason = 'passive';
-        else if (lc.player !== pre.active) attempt.reason = 'inny zawodnik';
+        if (lc.kind === 'passive') {
+          // Bierne odbicie po tapie: gdy kontakt był PO otwarciu okna zamachu, okno wygasło
+          // przed dolotem (tap za wcześnie) – to pudło, 'whiff'. Gdy kontakt był PRZED nim,
+          // piłka odbiła się od ciała, zanim tap dotarł do sim – jak brak tapu, 'passive'.
+          attempt.reason = lc.tick >= tapTick ? 'whiff' : 'passive';
+        } else if (lc.player !== pre.active) attempt.reason = 'inny zawodnik';
         // Punkt w 0,6 s po naszym kontakcie = piłka od razu na podłodze (aut albo własna połowa).
         else if (post.phase !== 'rally') attempt.reason = 'aut';
         else if (post.landing.valid && post.landing.hitsNet) attempt.reason = 'siatka';
         else if (!post.landing.valid || post.landing.pos.z >= 0) attempt.reason = 'aut';
         else attempt.success = true;
       }
-      report(attempt);
+      await finish(page, attempt);
     }
 
     // Podsumowanie.
@@ -415,7 +444,7 @@ async function main(): Promise<void> {
     console.log('Próg: brak w CLAUDE.md – odsetek idzie do raportu fazy, ocenia go brama F0.');
     console.log(`Zapisano: ${file}`);
   } finally {
-    await browser.close();
+    await browser?.close();
     await server.stop();
   }
 }
@@ -463,16 +492,27 @@ async function applyKeys(page: Page, held: Set<string>, desired: Set<string>): P
   return changes;
 }
 
+/** Zamyka próbę: odczyt najdłuższej klatki z bufora (przystanek pętli) i wpis w konsoli. */
+async function finish(page: Page, attempt: Attempt): Promise<void> {
+  const frames = await page.evaluate(() => window.__sw3d!.frameTimes());
+  attempt.maxFrameMs = frames.length > 0 ? Math.max(...frames) : null;
+  attempt.stalled = attempt.maxFrameMs !== null && attempt.maxFrameMs > STALL_FRAME_MS;
+  report(attempt);
+}
+
 function report(a: Attempt): void {
   const status = a.stalled ? 'STOP' : a.success ? 'OK  ' : 'FAIL';
   const delay = a.tapDelayMs === null ? '' : ` tap +${fmt(a.tapDelayMs, 0)} ms`;
   const q = a.success && a.contact ? ` jakość ${fmt(a.contact.quality, 2)}` : '';
   const reason = a.reason ? ` ${a.reason}` : '';
   const keys = ` klawisze ${a.runUpKeyChanges}`;
+  const frame = a.maxFrameMs === null ? '' : ` klatka max ${fmt(a.maxFrameMs, 0)} ms`;
   const reach = a.reach
     ? ` okno +${fmt(a.reach.enterInS * 1000, 0)}..${fmt(a.reach.exitInS * 1000, 0)} ms`
     : ' okno brak';
-  console.log(`[${String(a.index + 1).padStart(2)}] ${status}${delay}${q}${reason}${keys}${reach}`);
+  console.log(
+    `[${String(a.index + 1).padStart(2)}] ${status}${delay}${q}${reason}${keys}${reach}${frame}`,
+  );
 }
 
 interface HistogramBin {

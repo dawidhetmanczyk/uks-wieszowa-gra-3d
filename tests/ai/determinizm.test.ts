@@ -17,15 +17,19 @@ function run(seed: number, ticks: number) {
   const samples: number[] = [];
   const commands: Command[][] = [];
   let activeSwitches = 0;
+  let contacts = 0;
   for (let i = 0; i < ticks; i++) {
     const cmds = aiCommands(ai, sim, ALL);
     commands.push(cmds);
     step(sim, cmds);
-    for (const e of sim.events) if (e.type === 'active-switch') activeSwitches++;
+    for (const e of sim.events) {
+      if (e.type === 'active-switch') activeSwitches++;
+      if (e.type === 'contact') contacts++;
+    }
     // Próbka toru piłki co 0,25 s – wystarczy, żeby odróżnić dwa różne mecze.
     if (i % 30 === 0) samples.push(sim.ball.pos.x, sim.ball.pos.z);
   }
-  return { sim, ai, samples, commands, activeSwitches };
+  return { sim, ai, samples, commands, activeSwitches, contacts };
 }
 
 describe('AI – determinizm', () => {
@@ -35,6 +39,10 @@ describe('AI – determinizm', () => {
     expect(JSON.stringify(b.sim)).toBe(JSON.stringify(a.sim));
     expect(JSON.stringify(b.ai)).toBe(JSON.stringify(a.ai));
     expect(JSON.stringify(b.commands)).toBe(JSON.stringify(a.commands));
+    // Strażnik „żywego meczu”: dwa identyczne przebiegi 60 s stania też byłyby identyczne,
+    // więc porównanie nic nie mówi, jeśli AI nie gra – mają być punkty i kontakty.
+    expect(a.sim.score.points[0] + a.sim.score.points[1]).toBeGreaterThan(0);
+    expect(a.contacts).toBeGreaterThan(5);
   }, 60_000);
 
   it('inny seed → inny przebieg meczu', () => {
@@ -62,8 +70,9 @@ describe('AI – determinizm', () => {
       const cmds = aiCommands(ai, sim, [3, 1]);
       let lastPlayer = -1;
       for (const c of cmds) {
-        expect(c.type).not.toBe('new-set');
-        if (c.type === 'new-set') continue;
+        // Każda komenda AI ma adresata (move/swing/aim/release) – nowy set nie jest komendą.
+        expect('player' in c).toBe(true);
+        if (!('player' in c)) continue;
         expect([1, 3]).toContain(c.player);
         expect(c.player).toBeGreaterThanOrEqual(lastPlayer);
         lastPlayer = c.player;

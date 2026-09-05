@@ -10,8 +10,6 @@ import { beginSwing, releaseSwing, resolveSwings, setAim } from './contact';
 import { stepPlayers } from './players';
 import { updateLanding } from './predict';
 import { updatePhase } from './rules';
-import { resetSimState } from './state';
-import type { SimOptions } from './state';
 import type { Command, SimState } from './types';
 
 function applyCommand(state: SimState, cmd: Command): void {
@@ -34,15 +32,6 @@ function applyCommand(state: SimState, cmd: Command): void {
     case 'release':
       releaseSwing(state, state.players[cmd.player]);
       break;
-    case 'new-set': {
-      const opts: SimOptions = {
-        seed: cmd.seed,
-        humanControl: cmd.humanControl ?? state.humanControl,
-      };
-      if (cmd.servingTeam !== undefined) opts.servingTeam = cmd.servingTeam;
-      resetSimState(state, opts);
-      break;
-    }
   }
 }
 

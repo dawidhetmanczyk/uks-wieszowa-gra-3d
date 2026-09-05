@@ -12,7 +12,7 @@ const NO_WEBGL2_MESSAGE =
 const START_FAILED_MESSAGE = 'Nie udało się uruchomić gry. Szczegóły są w konsoli przeglądarki.';
 
 /**
- * Sprawdzenie na osobnej kanwie – wywołanie getContext na #scena ustaliłoby atrybuty
+ * Sprawdzenie na osobnej kanwie – wywołanie getContext na #scene ustaliłoby atrybuty
  * kontekstu przed rendererem, a te potem już się nie zmieniają.
  */
 function supportsWebGl2(): boolean {
@@ -29,7 +29,7 @@ function supportsWebGl2(): boolean {
 
 function showError(root: HTMLElement, text: string): void {
   const box = document.createElement('div');
-  box.className = 'blad';
+  box.className = 'error';
   box.setAttribute('role', 'alert');
   const title = document.createElement('h1');
   title.textContent = 'Set Wieszowa 3D';
@@ -40,13 +40,13 @@ function showError(root: HTMLElement, text: string): void {
 }
 
 function main(): void {
-  const root = document.getElementById('gra');
+  const root = document.getElementById('game');
   if (!(root instanceof HTMLElement)) {
-    throw new Error('Brak elementu #gra w index.html');
+    throw new Error('Brak elementu #game w index.html');
   }
-  const canvas = document.getElementById('scena');
+  const canvas = document.getElementById('scene');
   if (!(canvas instanceof HTMLCanvasElement)) {
-    showError(root, 'Brak kanwy #scena w index.html.');
+    showError(root, 'Brak kanwy #scene w index.html.');
     return;
   }
   if (!supportsWebGl2()) {

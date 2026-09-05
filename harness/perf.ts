@@ -5,8 +5,14 @@
  * To pomiar, nie test: kod wyjścia 0 także przy FAIL – progi mówią, czy mieścimy
  * się w budżecie, a decyzję podejmuje człowiek na podstawie liczb w raporcie.
  *
- * Użycie: pnpm harness:perf [--url <adres>] [--headless] [--sekundy 60] [--seed 7] [--build]
+ * Domyślnie Chromium startuje bez limitu klatek (`--disable-gpu-vsync
+ * --disable-frame-rate-limit`): delta rAF przycięta do odświeżania ekranu mierzy monitor
+ * (na 175 Hz p95 = 5,8 ms bez względu na grę), a nas interesuje koszt klatki. `--vsync`
+ * przywraca limit – wtedy p95 mówi tylko o zapasie pod częstotliwość ekranu.
+ *
+ * Użycie: pnpm harness:perf [--url <adres>] [--headless] [--vsync] [--sekundy 60] [--seed 7] [--build]
  */
+import type { Browser } from 'playwright';
 import {
   FRAME_BUFFER,
   TICK_HZ,
@@ -39,24 +45,51 @@ const CPU_THROTTLE_RATE = 4;
 const WARMUP_MS = 2000;
 const DEFAULT_SECONDS = 60;
 const DEFAULT_SEED = 7;
-/** Klatka 60 Hz = 16,67 ms; mediana w tym oknie oznacza rAF przycięty przez ekran. */
+/** Klatka 60 Hz = 16,67 ms – cel z CLAUDE.md; klatka powyżej dwóch okresów to widoczne przycięcie. */
 const RAF_60HZ_MS = 1000 / 60;
-const RAF_60HZ_TOLERANCE_MS = 0.6;
-/** Klatka powyżej dwóch okresów 60 Hz – widoczne przycięcie. */
 const LONG_FRAME_MS = 2 * RAF_60HZ_MS;
+/**
+ * Typowe częstotliwości odświeżania ekranów. Gdy mediana delty rAF odpowiada 1000/f
+ * z tolerancją ±3 %, a rozrzut p99 − p50 jest mniejszy niż 0,5 ms, rAF jest przycięty
+ * przez ekran i liczby mówią o monitorze, nie o koszcie klatki.
+ */
+const REFRESH_RATES_HZ = [60, 75, 90, 120, 144, 165, 175, 240] as const;
+const REFRESH_TOLERANCE = 0.03;
+const CAPPED_SPREAD_MAX_MS = 0.5;
+
+/**
+ * Rozpoznaje przycięcie rAF do okresu odświeżania; zwraca częstotliwość (Hz) albo null.
+ * Wąski rozrzut jest kluczowy: prawdziwy koszt klatki faluje (AI, punkt, serwis), a okres
+ * monitora stoi jak w zegarku.
+ */
+function detectRefreshCap(p50Ms: number, p99Ms: number): number | null {
+  if (!Number.isFinite(p50Ms) || !Number.isFinite(p99Ms)) return null;
+  if (p99Ms - p50Ms >= CAPPED_SPREAD_MAX_MS) return null;
+  for (const hz of REFRESH_RATES_HZ) {
+    const period = 1000 / hz;
+    if (Math.abs(p50Ms - period) <= period * REFRESH_TOLERANCE) return hz;
+  }
+  return null;
+}
 
 async function main(): Promise<void> {
   const args = parseArgs();
   const seconds = args.sekundy ?? DEFAULT_SECONDS;
   const seed = args.seed ?? DEFAULT_SEED;
   const spec = mobileSpec(3);
+  const uncappedFrameRate = !args.vsync;
 
   const server = await ensureServer(args);
-  const browser = await launchBrowser(args.headless);
+  // Przeglądarka wewnątrz try: gdy start Chromium padnie, finally i tak ubije serwer
+  // podglądu – inaczej vite preview zostawał żywy i skrypt wisiał.
+  let browser: Browser | null = null;
   try {
+    browser = await launchBrowser(args.headless, { uncappedFrameRate });
     const { context, page, errors } = await openPage(browser, spec);
     const url = withQuery(server.url, { ai: 1, seed });
-    console.log(`Otwieram ${url} – ${specLabel(spec)}, tryb ${modeLabel(args.headless)}`);
+    console.log(
+      `Otwieram ${url} – ${specLabel(spec)}, tryb ${modeLabel(args.headless)}, ${frameRateLabel(uncappedFrameRate)}`,
+    );
     await page.goto(url);
     const version = await waitForHooks(page);
 
@@ -79,9 +112,13 @@ async function main(): Promise<void> {
       const h = window.__sw3d!;
       const s = h.state();
       const canvas = document.querySelector('canvas');
+      // Hak opcjonalny (docs/22 §1 go nie wymaga) – funkcja albo obiekt, zależnie od renderu.
+      const ro = h.renderOptions;
+      const renderOptions = typeof ro === 'function' ? ro() : (ro ?? null);
       return {
         frameTimes: h.frameTimes(),
         render: h.renderInfo(),
+        renderOptions,
         tick: s.tick,
         points: s.score.points,
         phase: s.rally.phase,
@@ -101,7 +138,7 @@ async function main(): Promise<void> {
     const fpsMean = 1000 / avg;
     const longFrames = frames.filter((t) => t > LONG_FRAME_MS).length;
     const bufferFull = frames.length >= FRAME_BUFFER;
-    const rafCapped = Math.abs(p50 - RAF_60HZ_MS) < RAF_60HZ_TOLERANCE_MS;
+    const rafCappedHz = detectRefreshCap(p50, p99);
 
     const ticks = sample.tick - tickStart;
     const ticksExpected = Math.round(wallSeconds * TICK_HZ);
@@ -123,17 +160,20 @@ async function main(): Promise<void> {
       },
     };
     const warnings: string[] = [];
-    if (rafCapped) {
+    if (rafCappedHz !== null) {
       warnings.push(
-        'mediana ≈ 16,7 ms – rAF przycięty do 60 Hz; p95 mówi o zapasie pod 60 fps, nie o maksymalnym fps',
+        `mediana ${fmt(p50, 2)} ms przy rozrzucie p99 − p50 < ${fmt(CAPPED_SPREAD_MAX_MS)} ms – delta rAF = okres odświeżania ${rafCappedHz} Hz, nie koszt klatki` +
+          (uncappedFrameRate
+            ? ' (mimo flag bez limitu klatek – sprawdź, czy sterownik nie wymusza vsync)'
+            : '; uruchom bez --vsync, żeby zmierzyć koszt klatki'),
       );
     }
     if (bufferFull) {
-      // Bufor w pętli jest pierścieniowy: zostaje ostatnie FRAME_BUFFER klatek, czyli na ekranie
-      // 144 Hz tylko ~28 s z 60. Liczby są prawdziwe, ale dotyczą końcówki pomiaru.
+      // Bufor w pętli jest pierścieniowy: zostaje ostatnie FRAME_BUFFER klatek, czyli przy
+      // 300 fps bez limitu tylko ~55 s z 60. Liczby są prawdziwe, ale dotyczą końcówki pomiaru.
       const coveredS = frames.reduce((s, t) => s + t, 0) / 1000;
       warnings.push(
-        `bufor frameTimes pełny (${FRAME_BUFFER}) – statystyki obejmują ostatnie ${fmt(coveredS)} s z ${fmt(wallSeconds)} s; ekran > 60 Hz albo skróć --sekundy`,
+        `bufor frameTimes pełny (${FRAME_BUFFER}) – statystyki obejmują ostatnie ${fmt(coveredS)} s z ${fmt(wallSeconds)} s; bez limitu klatek albo ekran > 60 Hz – skróć --sekundy`,
       );
     }
     if (!simKeptUp) {
@@ -148,6 +188,8 @@ async function main(): Promise<void> {
       date: new Date().toISOString(),
       mode: modeLabel(args.headless),
       headless: args.headless,
+      /** true = Chromium bez limitu klatek (delta rAF = koszt klatki); false = --vsync. */
+      uncappedFrameRate,
       url,
       gameVersion: version,
       seed,
@@ -171,9 +213,12 @@ async function main(): Promise<void> {
         fpsMean,
         longFrames,
         bufferFull,
-        rafCapped60Hz: rafCapped,
+        /** Rozpoznana częstotliwość ekranu, gdy delta rAF to jej okres; null = brak przycięcia. */
+        rafCappedHz,
       },
       render: sample.render,
+      /** Z haka `renderOptions`, jeśli warstwa render go wystawia; null = brak haka. */
+      renderOptions: sample.renderOptions,
       sim: {
         tickStart,
         tickEnd: sample.tick,
@@ -192,7 +237,12 @@ async function main(): Promise<void> {
 
     console.log('');
     console.log('=== Harness perf – Set Wieszowa 3D F0 ===');
-    console.log(`Tryb: ${result.mode}; gra ${version}; seed ${seed}; CPU ×${CPU_THROTTLE_RATE}`);
+    console.log(
+      `Tryb: ${result.mode}; ${frameRateLabel(uncappedFrameRate)}; gra ${version}; seed ${seed}; CPU ×${CPU_THROTTLE_RATE}`,
+    );
+    if (sample.renderOptions !== null) {
+      console.log(`Opcje renderu: ${JSON.stringify(sample.renderOptions)}`);
+    }
     console.log(
       `Ekran: ${specLabel(spec)} – okno CSS ${sample.css.width}×${sample.css.height}, kanwa ${sample.canvas.width}×${sample.canvas.height} px, dpr ${fmt(sample.dpr, 2)}`,
     );
@@ -225,9 +275,16 @@ async function main(): Promise<void> {
     console.log(`Razem: ${passFail(result.allPass)}`);
     console.log(`Zapisano: ${file}`);
   } finally {
-    await browser.close();
+    await browser?.close();
     await server.stop();
   }
+}
+
+/** Do nagłówka raportu – bez tej informacji p95 z dwóch uruchomień nie da się porównać. */
+function frameRateLabel(uncapped: boolean): string {
+  return uncapped
+    ? 'bez limitu klatek (delta rAF = koszt klatki)'
+    : 'z vsync (delta rAF ≥ okres odświeżania ekranu)';
 }
 
 main().catch(fail);

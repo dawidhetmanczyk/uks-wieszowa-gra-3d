@@ -34,20 +34,21 @@ Sterujesz tym z pary, do którego leci piłka (pierścień pod stopami, „Steru
 
 ## 3. Pomiary
 
-### 3.1 Wydajność (harness `pnpm harness:perf`, 60 s AI vs AI, 390 × 844 @3×, CPU throttling 4×, Chromium headed)
+### 3.1 Wydajność (harness `pnpm harness:perf`, 60 s AI vs AI, 390 × 844 @3×, CPU throttling 4×, Chromium headed bez limitu klatek)
 
 | Miara | Wynik | Próg (CLAUDE.md) |
 |---|---|---|
-| fps p95 | 172,4 (czas klatki p50 5,70 ms, p95 5,80 ms, p99 5,90 ms) | ≥ 55 – PASS |
-| Draw calls na klatkę | 17 | ≤ 60 – PASS |
-| Trójkąty na klatkę | 2 376 | ≤ 120 000 – PASS |
+| Czas klatki (koszt CPU + GPU, bez vsync) | p50 1,30 ms, p95 2,40 ms, p99 3,40 ms, średnia 1,44 ms | – |
+| fps p95 | 417 (1000 / p95) | ≥ 55 – PASS |
+| Draw calls na klatkę | 18 | ≤ 60 – PASS |
+| Trójkąty na klatkę | 2 288 | ≤ 120 000 – PASS |
 | Programy shaderów | 5 | – |
-| Sim | 7201 ticków w 60,1 s (oczekiwane 7210) – nadążał | – |
-| Kanwa | 780 × 1688 px (dpr 3 → pixelRatio przycięty do 2) | – |
-| Bundle JS gzip | 146,1 kB (562 kB min) | ≤ 350 kB – PASS |
+| Sim | 7203 ticków w 60,2 s (oczekiwane 7218) – nadążał | – |
+| Kanwa | 780 × 1688 px (dpr 3 → pixelRatio przycięty do 2), antialias, cienie | – |
+| Bundle JS gzip | 146,6 kB (564 kB min) | ≤ 350 kB – PASS |
 | Assety glTF | 0 B | ≤ 4 MB – PASS |
 
-Uwaga: to pomiar na komputerze z GPU NVIDIA RTX 4060 (przez ANGLE/D3D11) z throttlingiem CPU ×4. Mówi tylko, że CPU (sim 120 Hz + predykcja toru co tick + AI) nadąża z zapasem – nie jest pomiarem GPU Androida klasy średniej. Ten trzeba zrobić na telefonie (`?ai=1&fps=1` pokazuje licznik fps w HUD). Headless Chromium (SwiftShader) dawał ~30 fps i nie nadaje się do budżetu.
+Uwaga: to pomiar na komputerze z GPU NVIDIA RTX 4060 (przez ANGLE/D3D11) z throttlingiem CPU ×4 i wyłączonym limitem klatek (delta rAF = rzeczywisty koszt klatki; pierwszy pomiar z vsync pokazywał 5,8 ms, czyli okres odświeżania monitora 175 Hz, nie koszt). Bufor 16384 klatek objął ostatnie 23,6 s pomiaru. Liczba mówi, że CPU (sim 120 Hz + predykcja toru co tick + AI) i GPU klasy desktop mają ogromny zapas – nie jest pomiarem Androida klasy średniej. Ten trzeba zrobić na telefonie: `?ai=1&fps=1` pokazuje licznik fps w HUD, a przełączniki `?jakosc=niska`, `?dpr=1`, `?aa=0`, `?cien=0` pozwalają zmierzyć, który składnik kosztuje. Headless Chromium (SwiftShader) dawał ~30 fps i nie nadaje się do budżetu.
 
 ### 3.2 Przyjęcie serwisu (harness `pnpm harness:przyjecie`, 50 prób)
 
@@ -55,30 +56,31 @@ Definicja pomiaru (docs/22 §8): rywale serwują; aktywny zawodnik dobiega klawi
 
 | Miara | Wynik |
 |---|---|
-| Sukcesy | **17 / 50 (34 %)** przy tapach rozłożonych równomiernie w ±250 ms |
-| Średnia jakość udanych kontaktów | 0,42 |
-| Średnie opóźnienie kontaktu względem wejścia w zasięg | −7 ms |
-| Porażki | 33, wszystkie „passive” (piłka odbiła się od kapsuły, zanim padł skuteczny zamach) |
+| Sukcesy | **25 / 50 (50 %)** przy tapach rozłożonych równomiernie w ±250 ms; 0 prób odrzuconych przez przystanek pętli (najdłuższa klatka 6 ms, raz 40 ms) |
+| Średnia jakość udanych kontaktów | 0,52 |
+| Średnie opóźnienie kontaktu względem wejścia w zasięg | +12 ms |
+| Porażki | 25: 15 „passive” (tap zaplanowany > +100 ms – piłka wcześniej trafiła w kapsułę), 10 „whiff” (tap < −150 ms – okno tapu wygasło przed dolotem) |
 
 Histogram opóźnienia tapu względem wejścia piłki w zasięg (prób / udanych):
 
 | Kosz | Prób | Udanych |
 |---|---|---|
-| [−250, −200) ms | 5 | 0 |
-| [−200, −150) ms | 5 | 0 |
-| [−150, −100) ms | 5 | 5 |
+| [−250, −200) ms | 4 | 0 |
+| [−200, −150) ms | 6 | 0 |
+| [−150, −100) ms | 4 | 4 |
 | [−100, −50) ms | 4 | 4 |
 | [−50, 0) ms | 7 | 7 |
-| [0, 50) ms | 1 | 1 |
-| ≥ 50 ms | 0 (tap nie zdążył – piłka wcześniej trafiła w ciało) | – |
+| [0, 50) ms | 5 | 5 |
+| [50, 100) ms | 5 | 5 |
+| ≥ 100 ms | 0 (tap nie zdążył – piłka wcześniej trafiła w ciało; 15 prób) | – |
 
-Czyli: **każdy tap w oknie od −150 do +50 ms trafia (17/17), skuteczne okno tapu ma ok. 200 ms.** Wcześniejszy tap wygasa (0,12 s łaski) przed dolotem piłki, późniejszy przegrywa z biernym odbiciem od ciała.
+Czyli: **każdy tap w oknie od −150 do +100 ms trafia (25/25), skuteczne okno tapu ma ok. 250 ms.** Wcześniejszy tap wygasa (0,12 s łaski) przed dolotem piłki, późniejszy przegrywa z biernym odbiciem od ciała. Jakość kontaktu rośnie z opóźnieniem: tapy przy −100 ms dają ~0,42 (kontakt wysoko, na krawędzi pasma przyjęcia), tapy przy +50…+75 ms ~0,8 (piłka na wysokości bioder). Pierwszy pomiar (przed naprawami harnessu) dawał 17/50 – tapy z dodatnim opóźnieniem nie padały przez błąd w planowaniu chwili tapu; ten wynik jest miarodajny.
 
-Interpretacja: model „przytrzymaj do kontaktu” sprawia, że wcześniejsze naciśnięcie jest bezpieczne (tap daje 0,12 s łaski, przytrzymanie do 0,8 s), a naciśnięcie później niż ok. +50 ms po wejściu w zasięg kończy się biernym odbiciem od ciała – piłka od krawędzi zasięgu (0,95 m) do kapsuły (0,3 m) leci ok. 60 ms. Histogram po koszach 50 ms pokazuje tę granicę. Trzymanie palca (zamiast tapnięcia) rozszerza okno do 0,8 s przed wejściem – harness tego wariantu nie mierzy.
+Interpretacja: model „przytrzymaj do kontaktu” sprawia, że wcześniejsze naciśnięcie jest bezpieczne (tap daje 0,12 s łaski, przytrzymanie do 0,8 s), a naciśnięcie później niż ok. +100 ms po wejściu w zasięg kończy się biernym odbiciem od ciała – piłka od krawędzi zasięgu (0,95 m) do kapsuły (0,3 m) leci ok. 60–100 ms. Histogram po koszach 50 ms pokazuje tę granicę. Trzymanie palca (zamiast tapnięcia) rozszerza okno do 0,8 s przed wejściem – harness tego wariantu nie mierzy; to wariant, którego dzieci prawdopodobnie użyją najczęściej („trzymaj, aż piłka doleci”).
 
 ### 3.3 Testy (`pnpm test`)
 
-83 testy w 11 plikach, wszystkie zielone (Vitest, Node, bez DOM):
+129 testów w 14 plikach, wszystkie zielone (Vitest, Node, bez DOM):
 
 | Plik | Co sprawdza |
 |---|---|
@@ -92,13 +94,18 @@ Interpretacja: model „przytrzymaj do kontaktu” sprawia, że wcześniejsze na
 | tests/ai/rozgrywka.test.ts | 5 seedów: set kończy się < 6 min, ≥ 60 % punktów z podłogi, ≥ 2 kontakty na wymianę, obie drużyny punktują |
 | tests/ai/partner.test.ts | „nie zabieraj gry”: partner nie zamachuje się, gdy człowiek zdąży; przejmuje, gdy człowiek jest 8 m dalej |
 | tests/ai/serwis.test.ts | AI serwuje po 1,0 s, 20/20 serwisów w boisku rywali |
-| tests/input/gesty.test.ts | klasyfikacja gestu, joystick, klawisze, mapowanie celu (bez DOM) |
+| tests/input/gesty.test.ts | klasyfikacja gestu, joystick, klawisze, mapowanie celu (bez DOM), próg celu ≥ 12 px |
+| tests/sim/przeglad-sim.test.ts | poprawki z przeglądu: kontakt zza siatki zeruje licznik, okno zamachu do lądowania po auto-skoku, immunitet po własnym kontakcie, jeden kontakt na tick, siatka × √0,4 w każdym kierunku, wypchnięcie przy siatce, piłka na z = 0 |
+| tests/ai/przeglad-ai.test.ts | reseed rng po nowym secie, obrona przed przelotem, role w czasie reakcji, release po kontakcie, \|move\| ≤ limit profilu |
+| tests/narzedzia/granice.test.ts | skaner granic na próbkach linii (import `'../ai'`, `three`, `window`, wnętrzności sim) i na prawdziwym drzewie |
 
-Pozostałe kontrole: `pnpm check:granice` (20 plików w sim/ai bez three/DOM/losowości), `pnpm typecheck` (trzy tsconfigi, w tym sim/ai bez lib DOM), `pnpm lint`, `pnpm format:check` – zielone.
+Testy „bez migotania”, podwójnego odbicia i zerowania licznika przy przelocie są sprawdzone mutacjami: wyzerowanie `ACTIVE_HYSTERESIS_M`, `ACTIVE_MIN_DWELL_S` albo usunięcie zerowania licznika w `ball.ts` daje czerwone testy (przed przeglądem wszystkie trzy mutacje przechodziły).
 
-### 3.4 AI vs AI (5 seedów, skrypt pomiarowy)
+Pozostałe kontrole: `pnpm check:granice` (36 plików: sim/ai bez three/DOM/losowości, warstwy wyżej łączą się z sim tylko przez `sim/index`), `pnpm typecheck` (trzy tsconfigi, w tym sim/ai bez lib DOM), `pnpm lint`, `pnpm format:check` – zielone.
 
-Sety kończą się w 96–216 s czasu gry, 6,1 kontaktu na punkt, 100 % punktów z podłogi (zero błędów four-touches / double-touch / under-net). Siła ataku działa: siła 0,25–0,5 → ~12,4 m/s, 0,5–0,75 → ~14,0 m/s, kontakt na ~2,9 m. Zaobserwowana asymetria: czerwoni wygrali 4 z 5 setów przy identycznym profilu – sprawdzone w przeglądzie (§6).
+### 3.4 AI vs AI (5 seedów, skrypt pomiarowy, po przeglądzie)
+
+Sety kończą się w 114–201 s czasu gry (wyniki 4:7, 7:9, 4:7, 9:10, 10:8), 6,2 kontaktu na punkt, 100 % punktów z podłogi (zero błędów four-touches / double-touch / under-net, zero autów). Siła ataku działa: siła 0,25–0,5 → ~12,5 m/s, 0,5–0,75 → ~14,4 m/s, kontakt na ~2,9 m. Zaobserwowana asymetria (czerwoni wygrywali 4 z 5 setów przy identycznym profilu) została zbadana w przeglądzie na 300 setach – to efekt przyjmowania pierwszego serwisu, nie błąd (§6). Zero autów i zero błędów przy Nowicjuszu wygląda nienaturalnie – do strojenia w F1 (F1 zakłada auty AI ≤ 12 %).
 
 ## 4. Zrzuty (docs/zrzuty/)
 
@@ -132,7 +139,36 @@ To najważniejsza część raportu (docs/21 „Zasady dla każdej fazy”). Peł
 
 ## 6. Przegląd adwersarialny
 
-WYNIK_PRZEGLADU
+Metoda: osiem niezależnych przeglądów (determinizm i granice, fizyka i zasady, AI, sterowanie i kamera, testy, harness, budżety, UX i język), każdy czytał kod w całości, uruchamiał polecenia i pisał skrypty dowodowe (w tym mutacje stałych i 300 setów AI vs AI). Wynik: 60 unikalnych znalezisk. Faza sceptyków (dwóch na znalezisko) dwukrotnie padła na limicie sesji, więc znaleziska oceniłem sam i podzieliłem na: naprawić w kodzie, zapisać w dokumencie, odrzucić. Naprawy wykonało osiem agentów po modułach, kontrola końcowa przeszła: granice, typy, lint, format, testy, build, smoke test w Chromium.
+
+Naprawione w kodzie (najważniejsze):
+
+| Moduł | Co było | Co jest |
+|---|---|---|
+| sim | kontakt zza siatki (blok, \|z\| < 0,35) liczony na liczniku odbić rywali → blok = „cztery odbicia” dla nas | kontakt drużyny, po której stronie piłka jeszcze nie jest, zeruje licznik i zmienia stronę |
+| sim | tap na wysoką piłkę uruchamiał auto-skok (0,39 s wznoszenia), a okno tapu trwało 0,12 s → gwarantowane pudło, cooldown w powietrzu, piłka od głowy = podwójne odbicie | skok wyzwolony zamachem trzyma okno otwarte do lądowania (nowe pole `jumpSwing`) |
+| sim | brak immunitetu dla zamachu tick po własnym kontakcie → podwójny tap = podwójne odbicie | 0,3 s immunitetu także dla zamachu, okno czeka |
+| sim | dwóch zawodników w zasięgu w tym samym ticku = dwa kontakty, drugi kasował prędkość pierwszego | jeden kontakt na tick, drugi czeka z otwartym oknem |
+| sim | siatka tłumiła tylko składową z (√0,4), x i y × 0,8 → do 57 % energii zamiast 40 % | cały wektor × √0,4 |
+| sim | wypchnięcie piłki z kapsuły przy siatce mogło przenieść ją na drugą stronę bez detekcji; piłka kończąca tick dokładnie na z = 0 dostawała złą stronę | piłka zostaje po stronie sprzed wypchnięcia; strona z kierunku lotu |
+| sim | komenda `new-set` w strumieniu psuła nagranie (tick do zera) | komenda usunięta z kontraktu; nowy set robi pętla |
+| ai | obrona ruszała do piłki dopiero po przelocie nad siatką (strażnik liczył odbicia rywali) | strażnik tylko dla własnego licznika – chaser przed przelotem |
+| ai | po każdym kontakcie para traciła role na czas reakcji i biegła do bazy | role trzymane do nowego odczytu |
+| ai | `release` po kontakcie nigdy nie wychodził (martwa gałąź); kwantyzacja przekraczała maxSpeed (3,629 zamiast 3,6); reużyty `AiState` nie reseedował rng | naprawione, z testami |
+| input | dryf palca ≤ 12 px sprzed rozstrzygnięcia gestu dawał cel zamachowi – tap „wystawa” stawał się atakiem | cel liczony od punktu, w którym gest stał się zamachem; próg celu ≥ 12 px |
+| input | wyścig: adresat komendy z `poll` sprzed przełączenia aktywnego (klawisz tuż po serwisie szedł do zawodnika AI) | input czyta `state.active` przez getter z pętli |
+| render | `rotation.y = −facing` odbijało kierunek (model glTF w F2 biegłby tyłem); piłka rzucała dwa cienie | `+facing`; cień z mapy piłki wyłączony, zostaje płaskie koło |
+| render/loop | brak sposobu na zmierzenie kosztu składników na telefonie | przełączniki `?jakosc=niska`, `?dpr=1`, `?aa=0`, `?cien=0`, hak `renderOptions()` |
+| ui | „CZERWONI” kontrast 3,05:1 przy 13 px; `<noscript>` czarny na granacie; pusta próbka koloru w trybie AI; polskie identyfikatory w CSS/HTML | jaśniejsza czerwień dla tekstu (5,0:1), biały komunikat, próbka ukryta, identyfikatory po angielsku |
+| tests | mutacje `ACTIVE_HYSTERESIS_M = 0`, `ACTIVE_MIN_DWELL_S = 0`, usunięcie zerowania licznika przy przelocie – wszystko zielone (83/83) | test „presja na migotanie” z regulatorem pozycji, test end-to-end podwójnego odbicia, test zerowania licznika, strażnik żywego meczu w determinizmie AI; każda z mutacji teraz pada |
+| harness | fps p95 5,8 ms to okres monitora 175 Hz (vsync), nie koszt klatki; prognoza wejścia w zasięg „uciekała” po wejściu piłki; zrzut „punkt” w trakcie animacji toasta; brak sprzątania serwera przy awarii Chromium | Chromium bez limitu klatek, ostrzeżenie o przycięciu do odświeżania; prognoza zamrożona; chwila tapu z ticku sim; próby z przystankiem pętli liczone osobno; `try/finally` |
+| config | skan granic nie łapał `import '../ai'` bez ukośnika; nic nie pilnowało „inne moduły importują sim tylko z index” | regexy poprawione, nowa reguła, 28 testów skanera |
+
+Zapisane w docs/22 zamiast zmieniane (kod wygrał): cień piłki na y = 0,006, promienie pierścieni 0,38–0,46 / 0,28–0,36 / 0,30–0,36, dojazd kamery −4 % po 100 ms i powrót w 200 ms, kamera w fazie serwisu śledzi tylko aktywnego, pierścień lądowania tylko w fazie rally, margines za linią końcową 2,5 m, maksymalnie 30 kroków sim na klatkę, serwujący może zagrać własny serwis odbity od siatki.
+
+Odrzucone jako nie-błędy (z dowodem): asymetria drużyn – w 300 setach AI vs AI drużyna przyjmująca pierwszy serwis wygrywa 54 % (0 asów, atak kończy 53 % akcji), metryki per drużyna identyczne, ablacja przełączania aktywnego daje wynik bit w bit; `Math.exp/log/atan2` są deterministyczne w jednym silniku JS (między silnikami możliwa różnica ulp – dla „meczu tygodnia” w F1 porównywać wyniki, nie stany); auty AI 0 % w 962 punktach (cel przycięty do boiska − 0,4 m; F1 zakłada ≤ 12 %, zero wygląda nienaturalnie – do strojenia).
+
+Po przeglądzie: 129 testów w 14 plikach (było 83 w 11), wszystkie zielone; skan granic obejmuje 36 plików.
 
 ## 7. Znane ograniczenia i propozycje na F0b / F1
 

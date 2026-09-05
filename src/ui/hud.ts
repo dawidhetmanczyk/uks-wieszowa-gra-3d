@@ -9,8 +9,8 @@
  * HUD nie zna zegara ściennego: toast po punkcie trwa tyle ticków sim, co pauza
  * po punkcie, więc w powtórce (ten sam stan) wygląda identycznie.
  */
-import { POINT_FREEZE_S, TICK_HZ } from '../sim/constants';
-import type { PointReason, SimState, TeamId } from '../sim/types';
+import { POINT_FREEZE_S, TICK_HZ } from '../sim/index';
+import type { PointReason, SimState, TeamId } from '../sim/index';
 
 export interface HudHandlers {
   onNewSet(): void;
@@ -194,6 +194,10 @@ export function createHud(root: HTMLElement, handlers: HudHandlers, options: Hud
   }
   const control = el('span', 'hud-control');
   const swatch = el('i', 'hud-swatch');
+  // Start bez próbki koloru – zgodnie z EMPTY_VIEW.controlColor = ''. Bez tego w trybie
+  // AI vs AI (kolor zawsze pusty) porównanie w update nigdy by jej nie ukryło i obok
+  // „AI vs AI” zostawałaby pusta obwódka.
+  swatch.hidden = true;
   const controlText = el('span', 'hud-control-text', '');
   control.append(swatch, controlText);
   const fps = el('span', 'hud-fps', '');

@@ -5,7 +5,8 @@
  * Trener Grzegorz i osobny profil „Partner” dojdą w F1 razem ze strojeniem
  * headless; wtedy Nowicjusz zostaje zamrożony jako bot referencyjny.
  */
-import { JUMP_SPEED, PLAYER_GRAVITY } from '../sim/constants';
+import { JUMP_SPEED, PLAYER_GRAVITY } from '../sim/index';
+
 export interface AiProfile {
   name: string;
   /** Co ile ticków AI odczytuje przewidywane lądowanie – to jest czas reakcji. */

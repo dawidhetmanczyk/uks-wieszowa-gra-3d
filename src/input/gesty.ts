@@ -7,10 +7,8 @@
  * tapnięcie (docs/22 §4). Progi i mapowania są tu, a nie w touch.ts/keyboard.ts,
  * żeby dotyk i klawiatura dawały sim identyczny kształt komend.
  */
-import { aimFromDirection } from '../sim/aim';
-import { POWER_FULL_HOLD_S, POWER_MIN_HOLD_S } from '../sim/constants';
-import type { Command, PlayerId, TeamId, Vec2 } from '../sim/types';
-import { clamp } from '../sim/vec';
+import { POWER_FULL_HOLD_S, POWER_MIN_HOLD_S, aimFromDirection, clamp } from '../sim/index';
+import type { Command, PlayerId, TeamId, Vec2 } from '../sim/index';
 
 // Progi gestów (docs/22 §4) -------------------------------------------------
 /** Poniżej tego przesunięcia palec „stoi” – i dla klasyfikacji, i dla joysticka. */
@@ -36,7 +34,10 @@ export const WORLD_X_PER_SCREEN_RIGHT = -1;
 /** Tryb gestu wskaźnika: nieznany (pierwsze HOLD_MS), joystick (ruch) albo zamach. */
 export type GestureMode = 'unknown' | 'joystick' | 'swing';
 
-/** Trwający zamach – do celownika i paska siły w renderze. */
+/**
+ * Trwający zamach – do celownika w renderze. Czas trzymania daje siłę do podglądu
+ * (holdPower) – w F0 nieużywaną przez render/HUD (pasek siły to F1).
+ */
 export interface HoldInfo {
   aim: Vec2 | null;
   /** Czas (ms, zegar warstwy input) wysłania komendy swing. */
@@ -101,8 +102,15 @@ export function quantizeAim(aim: Vec2): Vec2 {
   return { x: quantize(aim.x, AIM_QUANTUM_M), z: quantize(aim.z, AIM_QUANTUM_M) };
 }
 
-/** Cel z przesunięcia palca w trakcie trzymanego zamachu (docs/22 §4 „celowanie”). */
+/**
+ * Cel z przesunięcia palca w trakcie trzymanego zamachu (docs/22 §4 „celowanie”),
+ * liczonego od miejsca, w którym palec stał w chwili rozstrzygnięcia na zamach.
+ * Próg w pikselach to DEADZONE_PX – ten sam, przy którym klasyfikacja mówi „palec
+ * stoi”. Martwa strefa sim (AIM_DEADZONE · AIM_SCALE_PX = 9 px) jest ciaśniejsza i
+ * sama nie odsiewałaby dryfu, który klasyfikacja uznała za bezruch.
+ */
 export function aimFromOffset(dx: number, dy: number, team: TeamId): Vec2 | null {
+  if (Math.hypot(dx, dy) <= DEADZONE_PX) return null;
   const aim = aimFromDirection(dx / AIM_SCALE_PX, dy / AIM_SCALE_PX, team);
   return aim ? quantizeAim(aim) : null;
 }

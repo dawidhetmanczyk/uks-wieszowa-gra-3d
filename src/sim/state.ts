@@ -34,6 +34,7 @@ function createPlayer(id: PlayerId): PlayerState {
     swingPower: null,
     cooldownUntilTick: 0,
     lastHitTick: -1,
+    jumpSwing: false,
   };
 }
 
@@ -77,15 +78,6 @@ export function createSimState(opts: SimOptions): SimState {
   return state;
 }
 
-/**
- * Nowy set w istniejącym obiekcie stanu (komenda `new-set`) – pętla i HUD trzymają
- * referencję do stanu, więc podmieniamy pola, nie obiekt.
- */
-export function resetSimState(state: SimState, opts: SimOptions): void {
-  const fresh = createSimState(opts);
-  Object.assign(state, fresh);
-}
-
 /** Pozycja piłki w ręce serwującego: na wysokości ręki, lekko w stronę siatki. */
 export function heldBallPosition(out: Vec3, server: PlayerState): Vec3 {
   out.x = server.pos.x;
@@ -122,6 +114,7 @@ export function resetForServe(state: SimState, team: TeamId): void {
     p.swingPower = null;
     p.cooldownUntilTick = 0;
     p.lastHitTick = -1;
+    p.jumpSwing = false;
   }
 
   rally.phase = 'serve';
@@ -165,6 +158,7 @@ function clonePlayer(p: PlayerState): PlayerState {
     swingPower: p.swingPower,
     cooldownUntilTick: p.cooldownUntilTick,
     lastHitTick: p.lastHitTick,
+    jumpSwing: p.jumpSwing,
   };
 }
 

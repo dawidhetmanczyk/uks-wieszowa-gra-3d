@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BALL_R,
+  canReach,
   COURT_HALF_L,
   COURT_HALF_W,
   playersOf,
@@ -12,7 +13,16 @@ import {
   type TeamId,
 } from '../../src/sim';
 import { awardPoint, setWinnerFor } from '../../src/sim/rules';
-import { makeState, ofType, run, runUntil, setRallyBall, swing } from './pomocnicze';
+import {
+  launchBallTo,
+  makeState,
+  ofType,
+  placePlayer,
+  run,
+  runUntil,
+  setRallyBall,
+  swing,
+} from './pomocnicze';
 
 /** Piłka tuż nad zawodnikiem w pasmie przyjęcia, zaraz wejdzie w kontakt po zamachu. */
 function ballAt(state: SimState, id: PlayerId, opts: Parameters<typeof setRallyBall>[3]): void {
@@ -52,7 +62,7 @@ describe('zasady – odbicia', () => {
     expect(state.rally.phase).toBe('point');
   });
 
-  it('ten sam zawodnik dwa razy z rzędu to double-touch', () => {
+  it('ten sam zawodnik dwa razy z rzędu to double-touch (stan wstrzyknięty)', () => {
     const state = makeState(6);
     ballAt(state, 0, { touches: 1, lastToucher: 0, sideOfBall: 0 });
     const ev = run(state, 1, () => [swing(0)]);
@@ -60,6 +70,96 @@ describe('zasady – odbicia', () => {
     expect(point).toHaveLength(1);
     expect(point[0]!.event.reason).toBe('double-touch');
     expect(point[0]!.event.winner).toBe(1);
+  });
+
+  it('double-touch wytworzony przez sim: dwa prawdziwe kontakty zawodnika 0 z rzędu', () => {
+    // Test powyżej wstrzykuje touches/lastToucher; ten sprawdza, że sim sam tak księguje
+    // pierwszy kontakt, że drugi kontakt tego samego zawodnika jest błędem.
+    const state = makeState(12);
+    placePlayer(state, 0, -2.25, -6);
+    // Partner i rywale z drogi – tor przyjęcia (setterSpot, |x| ≤ 2,5) nie ma w nikogo trafić.
+    placePlayer(state, 1, 4.5, -8.5);
+    placePlayer(state, 2, -6, 8);
+    placePlayer(state, 3, 6, 8);
+    setRallyBall(state, { x: -2.25, y: 1.2, z: -6 }, { x: 0, y: -1, z: 0 }, { lastToucher: 2 });
+    const first = run(state, 1, () => [swing(0)]);
+    const c1 = ofType(first, 'contact');
+    expect(c1).toHaveLength(1);
+    expect(c1[0]!.event.player).toBe(0);
+    expect(c1[0]!.event.touchNo).toBe(1);
+    expect(ofType(first, 'point')).toHaveLength(0);
+    expect(state.rally.lastToucher).toBe(0);
+    expect(state.rally.touches).toBe(1);
+    const firstTick = c1[0]!.tick;
+
+    // Zawodnik 0 „dobiega” pod własne przyjęcie: staje tam, gdzie opadająca piłka przecina
+    // wysokość przyjęcia, i zamachuje się, gdy tylko piłka wejdzie w zasięg.
+    expect(state.landing.valid).toBe(true);
+    placePlayer(state, 0, state.landing.intercept.x, state.landing.intercept.z);
+    const { found, events } = runUntil(state, 'point', 600, (t, s) =>
+      // ≥ 40 ticków po własnym kontakcie: poza immunitetem (0,3 s) i poza zasięgiem
+      // odlatującej piłki – drugi kontakt ma być osobną, świadomą decyzją.
+      t - firstTick >= 40 && canReach(s, 0) ? [swing(0)] : [],
+    );
+    expect(found).not.toBeNull();
+    const point = ofType(events, 'point');
+    expect(point).toHaveLength(1);
+    expect(point[0]!.event.reason).toBe('double-touch');
+    expect(point[0]!.event.winner).toBe(1);
+    const c2 = ofType(events, 'contact');
+    expect(c2).toHaveLength(1);
+    expect(c2[0]!.event.player).toBe(0);
+    expect(c2[0]!.event.touchNo).toBe(2);
+    expect(c2[0]!.tick).toBe(point[0]!.tick);
+    expect(c2[0]!.tick - firstTick).toBeGreaterThanOrEqual(40);
+    expect(state.score.points).toEqual([0, 1]);
+  });
+
+  it('przejście nad siatką zeruje licznik: po 3 odbiciach rywal przyjmuje jako odbicie nr 1', () => {
+    const state = makeState(13);
+    placePlayer(state, 0, -6, -8);
+    placePlayer(state, 1, 6, -8);
+    placePlayer(state, 3, 6, 8);
+    // Po trzech odbiciach niebieskich piłka leci nad siatką w (0, 5) – apogeum ~3 m, prześwit
+    // nad siatką ~0,7 m, więc tor nie kończy się na siatce.
+    launchBallTo(state, { x: 0, y: 2.0, z: -3 }, { x: 0, z: 5 }, 1.4, {
+      touches: 3,
+      lastToucher: 0,
+      sideOfBall: 0,
+    });
+    run(state, 1);
+    expect(state.landing.valid).toBe(true);
+    expect(state.landing.hitsNet).toBe(false);
+    // Rywal 2 czeka tam, gdzie piłka opadnie do wysokości przyjęcia.
+    placePlayer(state, 2, state.landing.intercept.x, state.landing.intercept.z);
+
+    // Do przejścia nad siatką licznik trzyma 3 i strona to 0.
+    let guard = 0;
+    while (state.ball.pos.z <= 0 && guard++ < 200) {
+      expect(state.rally.touches).toBe(3);
+      expect(state.rally.sideOfBall).toBe(0);
+      run(state, 1);
+    }
+    expect(state.ball.pos.z).toBeGreaterThan(0);
+    expect(state.rally.phase).toBe('rally');
+    expect(state.rally.sideOfBall).toBe(1);
+    expect(state.rally.touches).toBe(0);
+    // Odpowiedzialność za ewentualny aut zostaje przy ostatnim, który dotknął.
+    expect(state.rally.lastToucher).toBe(0);
+
+    // Zamach rywala, gdy piłka wchodzi w zasięg: odbicie nr 1, bez punktu.
+    const { found, events } = runUntil(state, 'contact', 300, (_t, s) =>
+      canReach(s, 2) ? [swing(2)] : [],
+    );
+    expect(found).not.toBeNull();
+    const contact = ofType(events, 'contact')[0]!.event;
+    expect(contact.player).toBe(2);
+    expect(contact.touchNo).toBe(1);
+    expect(contact.kind).toBe('receive');
+    expect(ofType(events, 'point')).toHaveLength(0);
+    expect(state.rally.phase).toBe('rally');
+    expect(state.rally.touches).toBe(1);
+    expect(state.rally.lastToucher).toBe(2);
   });
 
   it('po serwisie serwujący może przyjąć własną piłkę odbitą od siatki (touches = 0)', () => {

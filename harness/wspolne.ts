@@ -103,6 +103,12 @@ export interface DevHooks {
   renderInfo(): { calls: number; triangles: number; programs: number };
   /** Okno zasięgu względem teraz (sekundy); null = piłka nie wejdzie w zasięg. */
   reachWindow(player: PlayerId): { enterInS: number; exitInS: number } | null;
+  /**
+   * Opcje renderu (rozdzielczość, cienie, postprocess…) – opcjonalne, bo docs/22 §1 ich nie
+   * wymaga; gdy warstwa render je wystawi, perf zapisuje je do JSON, żeby liczby fps dało się
+   * porównać między uruchomieniami z różnymi ustawieniami. Przyjmujemy funkcję albo obiekt.
+   */
+  renderOptions?: Record<string, unknown> | (() => Record<string, unknown>);
 }
 
 declare global {
@@ -124,12 +130,17 @@ export interface HarnessArgs {
   headless: boolean;
   /** Wymuś `pnpm build` nawet gdy dist/ istnieje. */
   build: boolean;
+  /**
+   * Zostaw limit klatek przeglądarki (vsync). Domyślnie perf go zdejmuje, bo delta rAF
+   * przycięta do okresu odświeżania ekranu mierzy monitor, nie koszt klatki.
+   */
+  vsync: boolean;
   sekundy: number | null;
   proby: number | null;
   seed: number | null;
 }
 
-const FLAGS = new Set(['headless', 'build']);
+const FLAGS = new Set(['headless', 'build', 'vsync']);
 const VALUES = new Set(['url', 'sekundy', 'proby', 'seed']);
 
 export function parseArgs(argv: readonly string[] = process.argv.slice(2)): HarnessArgs {
@@ -137,6 +148,7 @@ export function parseArgs(argv: readonly string[] = process.argv.slice(2)): Harn
     url: null,
     headless: false,
     build: false,
+    vsync: false,
     sekundy: null,
     proby: null,
     seed: null,
@@ -174,6 +186,7 @@ export function parseArgs(argv: readonly string[] = process.argv.slice(2)): Harn
   args.url = typeof url === 'string' ? url : null;
   args.headless = raw.get('headless') === true;
   args.build = raw.get('build') === true;
+  args.vsync = raw.get('vsync') === true;
   args.sekundy = num('sekundy');
   args.proby = num('proby');
   args.seed = num('seed');
@@ -235,10 +248,19 @@ export async function ensureServer(args: HarnessArgs): Promise<ServerHandle> {
     exitCode = code;
   });
 
+  // Ctrl+C w trakcie pomiaru: bez tego node kończy się, a cmd → pnpm → vite zostają
+  // i trzymają port 4173 do następnego uruchomienia. Kod 130 = przerwane sygnałem.
+  const onSigint = (): void => {
+    killTree(child);
+    process.exit(130);
+  };
+  process.once('SIGINT', onSigint);
+
   const handle: ServerHandle = {
     url: PREVIEW_URL,
     started: true,
     stop: async () => {
+      process.off('SIGINT', onSigint);
       killTree(child);
     },
   };
@@ -264,6 +286,7 @@ export async function ensureServer(args: HarnessArgs): Promise<ServerHandle> {
     }
     await sleep(250);
   }
+  process.off('SIGINT', onSigint);
   killTree(child);
   throw new Error(
     `Serwer nie odpowiedział w ${SERVER_START_TIMEOUT_MS / 1000} s:\n${output.join('')}`,
@@ -303,13 +326,30 @@ export const DESKTOP_SPEC: ContextSpec = {
   hasTouch: false,
 };
 
-export async function launchBrowser(headless: boolean): Promise<Browser> {
-  return chromium.launch({
-    headless,
-    // Bez tych flag Chromium pod Playwrightem potrafi wpaść na SwiftShader
-    // nawet w trybie headed – wtedy mierzymy CPU, nie GPU.
-    args: ['--use-angle=default', '--enable-gpu', '--ignore-gpu-blocklist'],
-  });
+export interface LaunchOptions {
+  /**
+   * Zdejmij limit klatek: rAF przestaje czekać na odświeżenie ekranu, więc delta rAF
+   * to koszt klatki, a nie okres monitora (na 175 Hz to 5,7 ms niezależnie od gry).
+   */
+  uncappedFrameRate?: boolean;
+}
+
+export async function launchBrowser(headless: boolean, opts: LaunchOptions = {}): Promise<Browser> {
+  // Bez tych flag Chromium pod Playwrightem potrafi wpaść na SwiftShader
+  // nawet w trybie headed – wtedy mierzymy CPU, nie GPU.
+  const args = [
+    '--use-angle=default',
+    '--enable-gpu',
+    '--ignore-gpu-blocklist',
+    // Okno harnessu zwykle leży pod innymi oknami – bez tych flag Chromium dławi rAF
+    // i timery zasłoniętej karty, a sim nadrabia po 30 kroków na klatkę (pomiar timingu
+    // i zrzuty tracą sens: w jednym przebiegu 32 z 50 prób miało taki przystanek).
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding',
+    '--disable-background-timer-throttling',
+  ];
+  if (opts.uncappedFrameRate) args.push('--disable-gpu-vsync', '--disable-frame-rate-limit');
+  return chromium.launch({ headless, args });
 }
 
 export interface PageHandle {

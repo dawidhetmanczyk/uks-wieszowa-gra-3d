@@ -152,8 +152,6 @@ export const BAND_ATTACK: readonly [number, number] = [2.0, REACH_TOP_STANDING];
 export const AUTO_JUMP_H_EXTRA = 0.4;
 export const AUTO_JUMP_TOP_EXTRA = 0.3;
 export const AUTO_JUMP_MAX_VY = 1.0;
-/** Odbicie od siatki: tłumienie składowych stycznych (x, y). */
-export const BALL_NET_TANGENT_FACTOR = 0.8;
 /** Cel przyjęcia/wystawy po szumie nie bliżej siatki niż to (żeby piłka nie leciała w siatkę). */
 export const OWN_TARGET_MIN_Z = 0.6;
 /** Cel domyślny ataku („między rywalami”) nie bliżej siatki niż to. */
@@ -163,3 +161,8 @@ export const BALL_REST_VY = 0.3;
 export const BALL_REST_VXZ = 0.05;
 /** Powyżej tej prędkości poziomej zawodnik obraca się w kierunku ruchu. */
 export const FACING_MIN_SPEED = 0.2;
+
+// [F0 – przegląd] Stałe dodane po przeglądzie kodu ------------------------
+/** Immunitet po własnym kontakcie w tickach – jedno miejsce dla kolizji kapsuły (ball.ts)
+ *  i rozstrzygania zamachów (contact.ts), żeby oba progi nie rozjechały się przy strojeniu. */
+export const BODY_IMMUNITY_TICKS = Math.round(BODY_IMMUNITY_S * TICK_HZ);

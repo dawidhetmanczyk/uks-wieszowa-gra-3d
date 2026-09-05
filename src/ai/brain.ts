@@ -13,32 +13,36 @@
  * Stan AI jest zwykłym obiektem bez metod (JSON), więc razem ze stanem sim daje
  * pełny obraz meczu i da się go porównać w testach determinizmu.
  */
-import type { Command, PlayerId, PlayerState, SimState, TeamId, Vec2 } from '../sim/types';
+import type { Command, PlayerId, PlayerState, SimState, TeamId, Vec2 } from '../sim/index';
 import {
   AI_SERVE_DELAY_S,
-  COURT_HALF_L,
-  COURT_HALF_W,
-  DT,
-  MAX_TOUCHES,
-  PLAYER_MAX_SPEED,
-  REACH_TOP_STANDING,
-  TICK_HZ,
-} from '../sim/constants';
-import { nextRange, nextTriangular, seedRng } from '../sim/prng';
-import { clamp, distXZ } from '../sim/vec';
-import {
   ALL_PLAYERS,
   attackSpot,
   basePosition,
+  canReach,
+  clamp,
   clampTargetToOpponentHalf,
+  COURT_HALF_L,
+  COURT_HALF_W,
+  defaultAttackTarget,
+  distXZ,
+  DT,
+  MAX_TOUCHES,
+  nextRange,
+  nextTriangular,
   partnerOf,
+  PLAYER_MAX_SPEED,
   playersOf,
+  positionAt,
+  REACH_TOP_STANDING,
+  reachWindow,
+  seedRng,
   setterSpot,
   sideSign,
   slotOf,
   teamOf,
-} from '../sim/spots';
-import { canReach, defaultAttackTarget, positionAt, reachWindow } from '../sim';
+  TICK_HZ,
+} from '../sim/index';
 import type { AiProfile } from './profile';
 import {
   AI_ARRIVE_RADIUS_M,
@@ -107,6 +111,8 @@ export interface AiState {
   lastTick: number;
 }
 
+/** Stała mieszana z ziarnem meczu: AI i sim mają osobne strumienie losowości z tego samego seeda. */
+const AI_SEED_MIX = 0x5bd1e995;
 const SERVE_DELAY_TICKS = Math.round(AI_SERVE_DELAY_S * TICK_HZ);
 const SWING_LEAD_TICKS = Math.round(AI_SWING_LEAD_S * TICK_HZ);
 const JUMP_LEAD_TICKS = Math.round(AI_JUMP_LEAD_S * TICK_HZ);
@@ -133,7 +139,7 @@ function createBrain(id: PlayerId): PlayerBrain {
 /** Własny strumień losowości: ziarno meczu zmieszane stałą, żeby AI i sim nie ciągnęły tych samych liczb. */
 export function createAi(seed: number, profile: AiProfile = NOWICJUSZ): AiState {
   return {
-    rng: seedRng(seed ^ 0x5bd1e995),
+    rng: seedRng(seed ^ AI_SEED_MIX),
     // Kopia, żeby późniejsza zmiana obiektu profilu u wołającego nie zmieniła przebiegu meczu.
     profile: {
       ...profile,
@@ -154,7 +160,10 @@ export function aiCommands(ai: AiState, sim: SimState, controlled: readonly Play
   const out: Command[] = [];
 
   // Tick cofnął się = nowy set albo powtórka: mózgi pamiętają nieistniejący mecz.
+  // Strumień losowości też startuje od ziarna nowego meczu – inaczej ten sam seed
+  // dawałby inny przebieg zależnie od tego, co AI grało wcześniej.
   if (sim.tick < ai.lastTick) {
+    ai.rng = seedRng(sim.seed ^ AI_SEED_MIX);
     ai.brains = [createBrain(0), createBrain(1), createBrain(2), createBrain(3)];
     ai.teams = [{ chaser: -1 }, { chaser: -1 }];
   }
@@ -254,19 +263,48 @@ function partnerShouldChase(
   return humanTime > timeToLanding + AI_YIELD_MARGIN_S;
 }
 
+/**
+ * Dotychczasowy „do piłki” zostaje, o ile wolno mu jeszcze dotknąć piłki. Używane,
+ * gdy para nie ma świeżego odczytu (czas reakcji po kontakcie) – brak danych to nie
+ * powód, żeby zmieniać decyzję.
+ */
+function keepChaser(sim: SimState, chaser: PlayerId | -1): PlayerId | -1 {
+  return chaser !== -1 && sim.rally.lastToucher !== chaser ? chaser : -1;
+}
+
+/** Role „miejscowe” – zawodnik stoi albo idzie na stałe miejsce, nie do piłki. */
+function isPositional(role: AiRole): boolean {
+  return role === 'setter' || role === 'attacker' || role === 'cover' || role === 'base';
+}
+
+/** Miejsce drugiego z pary wg numeru nadchodzącego odbicia. */
+function roleByTouches(touches: number): AiRole {
+  if (touches === 0) return 'setter';
+  if (touches === 1) return 'attacker';
+  return 'cover';
+}
+
 function roleFor(
   id: PlayerId,
+  brain: PlayerBrain,
   chaser: PlayerId | -1,
   human: PlayerId | -1,
   touches: number,
 ): AiRole {
   if (id === chaser) return 'ball';
   if (id === human) return 'idle';
-  // Para AI bez percepcji: stój w bazie, zamiast obu biec na wystawę.
-  if (chaser === -1 && human === -1) return 'base';
-  if (touches === 0) return 'setter';
-  if (touches === 1) return 'attacker';
-  return 'cover';
+  if (brain.perceived === null) {
+    // Czas reakcji po kontakcie (odczyt jeszcze nie przyszedł): dotychczasowe miejsce
+    // zostaje – bieg do bazy po każdym odbiciu rozbijał ustawienie pary na ~0,25 s.
+    if (isPositional(brain.role)) return brain.role;
+    // Zawodnik, który właśnie odbił (albo zaserwował): miejsce wg numeru odbicia;
+    // przy 0 odbić (po serwisie, po ataku rywali) – baza, bo nie wiadomo, gdzie piłka poleci.
+    return touches === 0 ? 'base' : roleByTouches(touches);
+  }
+  // Odczyt mówi, że piłka leci na drugą stronę (własny serwis albo atak przed przelotem
+  // nad siatką) i nikt z pary do niej nie idzie: baza, nie miejsce rozgrywającego.
+  if (chaser === -1 && !perceivedOnOwnSide(brain.perceived, teamOf(id))) return 'base';
+  return roleByTouches(touches);
 }
 
 function assignRoles(
@@ -299,8 +337,11 @@ function assignRoles(
   const landing = sim.landing;
   const incoming =
     sim.rally.sideOfBall === team || (landing.valid && sideSign(team) * landing.pos.z > 0);
-  // Po trzech odbiciach czwarte i tak jest błędem – lepiej dać piłce spaść.
-  if (!incoming || sim.rally.touches >= MAX_TOUCHES) {
+  // Po naszych trzech odbiciach czwarte i tak jest błędem – lepiej dać piłce spaść.
+  // Licznik dotyczy strony, po której jest piłka: trzy odbicia RYWALI to ich atak,
+  // do którego trzeba ruszyć, zanim piłka przeleci nad siatką.
+  const ourSideExhausted = sim.rally.sideOfBall === team && sim.rally.touches >= MAX_TOUCHES;
+  if (!incoming || ourSideExhausted) {
     tb.chaser = -1;
     ba.role = 'base';
     bb.role = 'base';
@@ -316,7 +357,12 @@ function assignRoles(
 
   if (human !== -1) {
     const partner = partnerOf(human);
-    tb.chaser = partnerShouldChase(sim, human, partner, ai) ? partner : -1;
+    tb.chaser =
+      ai.brains[partner].perceived === null
+        ? keepChaser(sim, tb.chaser)
+        : partnerShouldChase(sim, human, partner, ai)
+          ? partner
+          : -1;
   } else {
     const ta = arrivalTime(ai, sim, a);
     const tbb = arrivalTime(ai, sim, b);
@@ -326,13 +372,16 @@ function assignRoles(
       if (tb.chaser === a && ta <= tbb + AI_ROLE_HYSTERESIS_S) chaser = a;
       else if (tb.chaser === b && tbb <= ta + AI_ROLE_HYSTERESIS_S) chaser = b;
       else chaser = ta <= tbb ? a : b;
+    } else if (ba.perceived === null || bb.perceived === null) {
+      // Para nie ma pełnego odczytu (czas reakcji po kontakcie): decyzja zostaje.
+      chaser = keepChaser(sim, tb.chaser);
     }
     tb.chaser = chaser;
   }
 
   const touches = sim.rally.touches;
-  ba.role = roleFor(a, tb.chaser, human, touches);
-  bb.role = roleFor(b, tb.chaser, human, touches);
+  ba.role = roleFor(a, ba, tb.chaser, human, touches);
+  bb.role = roleFor(b, bb, tb.chaser, human, touches);
 }
 
 // Komendy ------------------------------------------------------------------
@@ -340,6 +389,29 @@ function assignRoles(
 function quantize(v: number): number {
   const q = Math.round(v * MOVE_STEPS) / MOVE_STEPS;
   return q === 0 ? 0 : q; // bez -0 w nagraniach
+}
+
+/** Kwantyzacja w dół (ku zeru) – nigdy nie wydłuża składowej. */
+function quantizeDown(v: number): number {
+  const q = Math.trunc(v * MOVE_STEPS) / MOVE_STEPS;
+  return q === 0 ? 0 : q;
+}
+
+/**
+ * Wektor move na siatce AI_MOVE_QUANTUM o długości ≤ `limit`. Zaokrąglenie per składowa
+ * potrafi wydłużyć wektor (0,7889 zamiast 0,7826 → sim biegłby 3,63 m/s zamiast 3,6);
+ * wtedy skalujemy do limitu i ucinamy w dół, żeby na pewno go nie przekroczyć.
+ */
+function quantizeMove(v: Vec2, limit: number): Vec2 {
+  let x = quantize(v.x);
+  let z = quantize(v.z);
+  const l = Math.sqrt(x * x + z * z);
+  if (l > limit) {
+    const k = limit / l;
+    x = quantizeDown(x * k);
+    z = quantizeDown(z * k);
+  }
+  return { x, z };
 }
 
 /** Cel zostaje na własnej połowie i w rozsądnej odległości od linii. */
@@ -350,13 +422,18 @@ function clampToOwnHalf(target: Vec2, team: TeamId): Vec2 {
   return { x: clamp(target.x, -xMax, xMax), z: s * zAbs };
 }
 
+/** Ułamek prędkości sim, jaki wolno zadać profilowi (sim skaluje move × PLAYER_MAX_SPEED). */
+function speedLimit(maxSpeed: number): number {
+  return Math.min(1, maxSpeed / PLAYER_MAX_SPEED);
+}
+
 /** Wektor move do celu: pełna prędkość profilu, zero w promieniu dojścia. */
-function moveToward(player: PlayerState, target: Vec2, maxSpeed: number): Vec2 {
+function moveToward(player: PlayerState, target: Vec2, limit: number): Vec2 {
   const dx = target.x - player.pos.x;
   const dz = target.z - player.pos.z;
   const d = Math.sqrt(dx * dx + dz * dz);
   if (d <= AI_ARRIVE_RADIUS_M) return { x: 0, z: 0 };
-  const s = Math.min(1, maxSpeed / PLAYER_MAX_SPEED) / d;
+  const s = limit / d;
   return { x: dx * s, z: dz * s };
 }
 
@@ -422,12 +499,9 @@ function act(ai: AiState, sim: SimState, id: PlayerId, out: Command[]): void {
   }
   brain.lastControlledTick = sim.tick;
 
-  // Sim zamknął okno zamachu (kontakt, pudło, koniec łaski) → wolno zamachnąć się znów.
-  if (brain.swingTick >= 0 && sim.tick > brain.swingTick && player.swingStartTick === -1) {
-    brain.swingTick = -1;
-    brain.releaseSent = false;
-  }
-  // Release: tick po kontakcie albo po limicie trzymania.
+  // Release: tick po kontakcie albo po limicie trzymania (docs/22 §6). Sprawdzane PRZED
+  // zamknięciem zamachu poniżej – kontakt czyści zamach w sim w tym samym ticku, więc
+  // odwrotna kolejność gubiła release po każdym trafieniu.
   if (brain.swingTick >= 0 && !brain.releaseSent && sim.tick > brain.swingTick) {
     const justHit = player.lastHitTick === sim.tick - 1;
     const timedOut = sim.tick - brain.swingTick >= RELEASE_TIMEOUT_TICKS;
@@ -435,6 +509,11 @@ function act(ai: AiState, sim: SimState, id: PlayerId, out: Command[]): void {
       out.push({ type: 'release', player: id });
       brain.releaseSent = true;
     }
+  }
+  // Sim zamknął okno zamachu (kontakt, pudło, koniec łaski) → wolno zamachnąć się znów.
+  if (brain.swingTick >= 0 && sim.tick > brain.swingTick && player.swingStartTick === -1) {
+    brain.swingTick = -1;
+    brain.releaseSent = false;
   }
   const canSwing =
     brain.swingTick < 0 && player.swingStartTick === -1 && player.cooldownUntilTick <= sim.tick;
@@ -458,10 +537,9 @@ function act(ai: AiState, sim: SimState, id: PlayerId, out: Command[]): void {
       break;
     }
     case 'ball': {
-      if (brain.perceived === null) {
-        target = basePosition(team, slotOf(id));
-        break;
-      }
+      // „Do piłki” bez odczytu = czas reakcji po kontakcie kogoś innego: stoi, aż zobaczy,
+      // gdzie piłka poleciała (bieg do bazy oddalał go od akcji).
+      if (brain.perceived === null) break;
       target = clampToOwnHalf(
         { x: brain.perceived.x, z: brain.perceived.z + sideSign(team) * brain.perceivedBehindM },
         team,
@@ -488,12 +566,11 @@ function act(ai: AiState, sim: SimState, id: PlayerId, out: Command[]): void {
       break;
   }
 
-  const desired =
-    target === null ? { x: 0, z: 0 } : moveToward(player, target, ai.profile.maxSpeed);
-  const qx = quantize(desired.x);
-  const qz = quantize(desired.z);
-  if (qx !== brain.lastMove.x || qz !== brain.lastMove.z) {
-    out.push({ type: 'move', player: id, x: qx, z: qz });
-    brain.lastMove = { x: qx, z: qz };
+  const limit = speedLimit(ai.profile.maxSpeed);
+  const desired = target === null ? { x: 0, z: 0 } : moveToward(player, target, limit);
+  const q = quantizeMove(desired, limit);
+  if (q.x !== brain.lastMove.x || q.z !== brain.lastMove.z) {
+    out.push({ type: 'move', player: id, x: q.x, z: q.z });
+    brain.lastMove = q;
   }
 }

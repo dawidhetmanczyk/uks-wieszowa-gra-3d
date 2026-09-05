@@ -6,8 +6,8 @@
  * gestu nie „przerzuciło” trzymanego kciuka na drugiego zawodnika. Klasyfikacja
  * i mapowania są w gesty.ts – tutaj jest wyłącznie DOM.
  */
-import { teamOf } from '../sim/spots';
-import type { PlayerId, TeamId, Vec2 } from '../sim/types';
+import { teamOf } from '../sim/index';
+import type { PlayerId, TeamId, Vec2 } from '../sim/index';
 import type { GestureMode, HoldInfo, InputSink } from './gesty';
 import { aimFromOffset, classifyGesture, joystickVector, sameAim, sameVec2 } from './gesty';
 
@@ -20,15 +20,23 @@ interface TrackedPointer {
   id: number;
   player: PlayerId;
   team: TeamId;
+  /** Punkt dotknięcia (px CSS) – od niego liczy się klasyfikacja gestu i joystick. */
   startX: number;
   startY: number;
-  /** Przesunięcie względem punktu startu w px CSS. */
-  dx: number;
-  dy: number;
+  /** Bieżące położenie palca (px CSS). */
+  x: number;
+  y: number;
   downAt: number;
   mode: GestureMode;
   /** Czas wysłania komendy swing – od niego liczy się siła do podglądu. */
   swingAt: number;
+  /**
+   * Położenie palca w chwili rozstrzygnięcia na zamach – od niego liczy się cel,
+   * nie od punktu dotknięcia: dryf sprzed rozstrzygnięcia (≤ DEADZONE_PX) nie ma
+   * stać się celem przy pierwszym pointermove.
+   */
+  swingX: number;
+  swingY: number;
   lastMove: Vec2;
   lastAim: Vec2 | null;
 }
@@ -51,6 +59,8 @@ export function createTouchInput(target: HTMLElement, sink: InputSink): TouchInp
   function startSwing(p: TrackedPointer, now: number): void {
     p.mode = 'swing';
     p.swingAt = now;
+    p.swingX = p.x;
+    p.swingY = p.y;
     p.lastAim = null;
     sink.push({ type: 'swing', player: p.player, aim: null });
   }
@@ -67,21 +77,25 @@ export function createTouchInput(target: HTMLElement, sink: InputSink): TouchInp
     sink.push({ type: 'aim', player: p.player, aim });
   }
 
-  /** Rozstrzyga tryb nieznanego wskaźnika i przekłada bieżące przesunięcie na komendę. */
+  /** Rozstrzyga tryb nieznanego wskaźnika i przekłada bieżące położenie palca na komendę. */
   function update(p: TrackedPointer, now: number): void {
+    const dx = p.x - p.startX;
+    const dy = p.y - p.startY;
     if (p.mode === 'unknown') {
-      const mode = classifyGesture(now - p.downAt, p.dx, p.dy);
+      const mode = classifyGesture(now - p.downAt, dx, dy);
       if (mode === 'unknown') return;
       if (mode === 'swing') {
         // Zamach zaczyna się bez celu (docs/22 §4). Dryf kciuka sprzed rozstrzygnięcia
-        // nie ma stać się celem – celowanie rusza od następnego ruchu palca.
+        // nie ma stać się celem: startSwing zapamiętuje bieżące położenie palca i od
+        // niego liczy się cel, a aimFromOffset odsiewa przesunięcia ≤ DEADZONE_PX –
+        // celowanie rusza dopiero od wyraźnego ruchu po rozstrzygnięciu.
         startSwing(p, now);
         return;
       }
       p.mode = 'joystick';
     }
-    if (p.mode === 'joystick') emitMove(p, joystickVector(p.dx, p.dy));
-    else emitAim(p, aimFromOffset(p.dx, p.dy, p.team));
+    if (p.mode === 'joystick') emitMove(p, joystickVector(dx, dy));
+    else emitAim(p, aimFromOffset(p.x - p.swingX, p.y - p.swingY, p.team));
   }
 
   function finish(p: TrackedPointer, now: number, cancelled: boolean): void {
@@ -126,11 +140,13 @@ export function createTouchInput(target: HTMLElement, sink: InputSink): TouchInp
       team: teamOf(player),
       startX: e.clientX,
       startY: e.clientY,
-      dx: 0,
-      dy: 0,
+      x: e.clientX,
+      y: e.clientY,
       downAt: now,
       mode: 'unknown',
       swingAt: now,
+      swingX: e.clientX,
+      swingY: e.clientY,
       lastMove: { x: 0, z: 0 },
       lastAim: null,
     };
@@ -159,16 +175,16 @@ export function createTouchInput(target: HTMLElement, sink: InputSink): TouchInp
   function onPointerMove(e: PointerEvent): void {
     const p = pointers.get(e.pointerId);
     if (!p) return;
-    p.dx = e.clientX - p.startX;
-    p.dy = e.clientY - p.startY;
+    p.x = e.clientX;
+    p.y = e.clientY;
     update(p, sink.now());
   }
 
   function onPointerUp(e: PointerEvent): void {
     const p = pointers.get(e.pointerId);
     if (!p) return;
-    p.dx = e.clientX - p.startX;
-    p.dy = e.clientY - p.startY;
+    p.x = e.clientX;
+    p.y = e.clientY;
     finish(p, sink.now(), false);
   }
 

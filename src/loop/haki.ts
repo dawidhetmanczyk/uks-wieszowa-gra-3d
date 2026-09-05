@@ -4,6 +4,7 @@
  * także w buildzie produkcyjnym – harness gra na `vite preview`.
  */
 import { DT, reachWindow, type PlayerId, type SimState, type TeamId } from '../sim/index';
+import type { ResolvedRenderOptions } from '../render/index';
 
 export const DEV_HOOKS_VERSION = '0.0.1-f0';
 
@@ -36,6 +37,11 @@ export interface DevHooks {
   resetFrameTimes(): void;
   renderInfo(): RenderInfo;
   reachWindow(player: PlayerId): ReachWindowSeconds | null;
+  /**
+   * Przełączniki jakości, z którymi rysuje render (?jakosc, ?dpr, ?aa, ?cien) – harness
+   * zapisuje je obok wyniku, żeby pomiar dało się porównać. Rozszerzenie F0 poza kontrakt.
+   */
+  renderOptions(): ResolvedRenderOptions;
 }
 
 declare global {

@@ -19,6 +19,7 @@ import {
   BAND_ATTACK,
   BAND_RECEIVE,
   BAND_SET,
+  BODY_IMMUNITY_TICKS,
   COURT_HALF_L,
   COURT_HALF_W,
   DEFAULT_TARGET_MIN_Z,
@@ -72,6 +73,7 @@ export function clearSwing(p: PlayerState): void {
   p.swingStartTick = -1;
   p.swingReleaseTick = -1;
   p.swingPower = null;
+  p.jumpSwing = false;
 }
 
 /** Początek zamachu. Ignorowany w pauzie, w blokadzie po pudle, w trakcie zamachu
@@ -112,9 +114,16 @@ export function setAim(p: PlayerState, aim: Vec2 | null): void {
 
 // Okno, siła, jakość -----------------------------------------------------
 
-/** Ręce w górze: trzyma (≤ SWING_HOLD_MAX_S) albo puścił przed chwilą (≤ SWING_GRACE_S). */
+/**
+ * Ręce w górze: trzyma (≤ SWING_HOLD_MAX_S) albo puścił przed chwilą (≤ SWING_GRACE_S).
+ * Wyjątek: skok wyzwolony zamachem trzyma okno otwarte do lądowania – tapnięcie na wysoką
+ * piłkę uruchamia skok trwający ~0,39 s do apogeum, a okno po puszczeniu ma 0,12 s, więc
+ * bez tego wyjątku każdy taki skok kończył się pudłem w powietrzu i odbiciem od głowy.
+ * Pudło jest możliwe dopiero po wylądowaniu bez kontaktu.
+ */
 export function isSwingActive(state: SimState, p: PlayerState): boolean {
   if (p.swingStartTick < 0) return false;
+  if (p.jumpSwing && !p.grounded) return true;
   if (p.swingReleaseTick < 0) return state.tick - p.swingStartTick <= HOLD_MAX_TICKS;
   return state.tick - p.swingReleaseTick <= GRACE_TICKS;
 }
@@ -219,11 +228,26 @@ function finishContact(
 
 const scratchTo: Vec3 = { x: 0, y: BALL_R, z: 0 };
 
+/**
+ * Kontakt drużyny, po której stronie piłka jeszcze „nie jest” (blok nad siatką albo
+ * dotknięcie tuż za nią, |z| < NET_CONTACT_TOLERANCE_Z, zanim collideNet zobaczy przejście):
+ * liczy się jak zmiana strony – licznik odbić od zera, strona piłki = drużyna dotykającego.
+ * Bez tego blok przy trzecim odbiciu rywali był „czwartym odbiciem” i punktem dla nich,
+ * a lastToucher z drugiej drużyny mógł dać double-touch. lastToucher zostaje jak w collideNet.
+ */
+function claimSide(state: SimState, team: TeamId): void {
+  const rally = state.rally;
+  if (rally.sideOfBall === team) return;
+  rally.sideOfBall = team;
+  rally.touches = 0;
+}
+
 /** Aktywny kontakt: piłka jest w zasięgu zawodnika z otwartym oknem zamachu. */
 function performContact(state: SimState, p: PlayerState): void {
   const ball = state.ball;
   const rally = state.rally;
   const team = p.team;
+  claimSide(state, team);
   const touchNo = rally.touches + 1;
   // Rodzaj (docs/22 §3 pkt 7): 3. odbicie i każde z celem = atak; 1. = przyjęcie; 2. = wystawa.
   const kind: HitKind =
@@ -302,6 +326,7 @@ function performServe(state: SimState, p: PlayerState, power: number): void {
  */
 export function registerPassiveTouch(state: SimState, p: PlayerState): void {
   if (state.rally.phase !== 'rally') return;
+  claimSide(state, p.team);
   const touchNo = state.rally.touches + 1;
   const violation = checkTouchRules(state, p.id, touchNo);
   const target: Vec2 = { x: state.ball.pos.x, z: state.ball.pos.z };
@@ -313,6 +338,12 @@ function whiff(state: SimState, p: PlayerState): void {
   clearSwing(p);
   p.cooldownUntilTick = state.tick + WHIFF_COOLDOWN_TICKS;
   state.events.push({ type: 'whiff', player: p.id });
+}
+
+/** Skok z zamachu: okno kontaktu zostaje otwarte do lądowania (isSwingActive). */
+function jumpForSwing(p: PlayerState): void {
+  startJump(p);
+  p.jumpSwing = true;
 }
 
 /** Czas od odbicia do apogeum skoku (players.ts całkuje semi-implicit Euler – różnica ≤ 1 tick). */
@@ -344,7 +375,7 @@ function maybeAutoJump(state: SimState, p: PlayerState): void {
     const dx = ahead.x - (p.pos.x + p.vel.x * JUMP_RISE_S);
     const dz = ahead.z - (p.pos.z + p.vel.z * JUMP_RISE_S);
     if (dx * dx + dz * dz <= REACH_RADIUS * REACH_RADIUS) {
-      startJump(p);
+      jumpForSwing(p);
       return;
     }
   }
@@ -357,7 +388,7 @@ function maybeAutoJump(state: SimState, p: PlayerState): void {
   const dz = ball.pos.z - p.pos.z;
   const hMax = REACH_H + AUTO_JUMP_H_EXTRA;
   if (dx * dx + dz * dz > hMax * hMax) return;
-  startJump(p);
+  jumpForSwing(p);
 }
 
 function resolveServeSwing(state: SimState, p: PlayerState): void {
@@ -369,8 +400,14 @@ function resolveServeSwing(state: SimState, p: PlayerState): void {
   performServe(state, p, power);
 }
 
-/** Rozstrzygnięcie zamachów wszystkich zawodników w kolejności 0..3. */
+/**
+ * Rozstrzygnięcie zamachów wszystkich zawodników w kolejności 0..3.
+ * Najwyżej jeden kontakt na tick: performContact zmienia tylko prędkość piłki, więc
+ * drugi zawodnik w zasięgu tej samej pozycji dostałby „swój” kontakt w tym samym ticku
+ * (i double/four-touch). Kolejni zachowują otwarte okno i czekają na następny tick.
+ */
 export function resolveSwings(state: SimState): void {
+  let contactThisTick = false;
   for (const p of state.players) {
     if (p.swingStartTick < 0) continue;
     const phase = state.rally.phase;
@@ -387,8 +424,14 @@ export function resolveSwings(state: SimState): void {
       whiff(state, p);
       continue;
     }
+    if (contactThisTick) continue;
+    // Immunitet po własnym kontakcie (jak dla kapsuły w ball.ts): piłka jest w zasięgu
+    // jeszcze ~0,17 s po odbiciu, więc podwójne tapnięcie dawałoby double-touch.
+    // Okno zamachu zostaje otwarte i czeka; auto-skok też nie ma sensu na własną piłkę.
+    if (p.lastHitTick >= 0 && state.tick - p.lastHitTick < BODY_IMMUNITY_TICKS) continue;
     if (inReach(state.ball.pos, p.pos, p.team)) {
       performContact(state, p);
+      contactThisTick = true;
       continue;
     }
     maybeAutoJump(state, p);

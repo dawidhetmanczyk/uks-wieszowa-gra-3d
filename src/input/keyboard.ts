@@ -6,8 +6,8 @@
  * i przyciski są omijane przy keydown, bo tam spacja i strzałki znaczą coś
  * innego; keyup obsługujemy zawsze, żeby klawisz nie „zawisł” po ucieczce fokusu.
  */
-import { teamOf } from '../sim/spots';
-import type { PlayerId, TeamId, Vec2 } from '../sim/types';
+import { teamOf } from '../sim/index';
+import type { PlayerId, TeamId, Vec2 } from '../sim/index';
 import type { HoldInfo, InputSink } from './gesty';
 import { aimFromArrows, keyboardVector, sameAim, sameVec2 } from './gesty';
 

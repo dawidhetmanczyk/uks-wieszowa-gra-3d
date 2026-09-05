@@ -31,7 +31,7 @@ export interface Vec2 {
  * - serve: serwujący trzyma piłkę (ball.held), czeka na zamach;
  * - rally: piłka w grze;
  * - point: punkt przyznany, pauza POINT_FREEZE_S, piłka jeszcze się toczy;
- * - set-over: set rozstrzygnięty, czeka na komendę new-set.
+ * - set-over: set rozstrzygnięty, czeka na nowy set (loop tworzy stan od nowa przez createSimState).
  */
 export type Phase = 'serve' | 'rally' | 'point' | 'set-over';
 
@@ -70,6 +70,9 @@ export interface PlayerState {
   cooldownUntilTick: number;
   /** Tick ostatniego kontaktu z piłką; -1 = brak. Steruje immunitetem kolizji. */
   lastHitTick: number;
+  /** Skok wyzwolony zamachem (auto-skok): okno kontaktu zostaje otwarte do lądowania,
+   *  niezależnie od czasu trzymania – tapnięcie na wysoką piłkę nie kończy się pudłem w locie. */
+  jumpSwing: boolean;
 }
 
 export interface BallState {
@@ -172,14 +175,14 @@ export interface SimState {
  *   W fazie serve przez serwującego: z power → serwis natychmiast; bez → serwis przy release.
  * - aim: zmiana celu w trakcie trzymania.
  * - release: puszczenie – kończy trzymanie (siła = czas trzymania, jeśli nie nadpisana).
- * - new-set: nowy set z podanym ziarnem; opcjonalnie kto serwuje i czy człowiek gra.
+ * Nowy set nie jest komendą: cofałby tick do zera w środku nagrania, a replay pomijałby
+ * resztę meczu. Nowy set = nowy stan (createSimState) i nowe nagranie.
  */
 export type Command =
   | { type: 'move'; player: PlayerId; x: number; z: number }
   | { type: 'swing'; player: PlayerId; aim: Vec2 | null; power?: number }
   | { type: 'aim'; player: PlayerId; aim: Vec2 | null }
-  | { type: 'release'; player: PlayerId }
-  | { type: 'new-set'; seed: number; servingTeam?: TeamId; humanControl?: boolean };
+  | { type: 'release'; player: PlayerId };
 
 /** Jedna klatka nagrania: komendy podane do `step` w danym ticku. */
 export interface RecordedTick {

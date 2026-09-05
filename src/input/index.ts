@@ -4,7 +4,7 @@
  * `poll` oddaje je raz na klatkę, sklejone tak, żeby sim nie dostał dwóch
  * ruchów tego samego zawodnika w jednym ticku. Nic tu nie zmienia stanu sim.
  */
-import type { Command, PlayerId, SimState, Vec2 } from '../sim/types';
+import type { Command, PlayerId, SimState, Vec2 } from '../sim/index';
 import type { InputSink } from './gesty';
 import { holdPower } from './gesty';
 import { createKeyboardInput } from './keyboard';
@@ -12,13 +12,16 @@ import { createTouchInput } from './touch';
 
 export { AIM_SCALE_PX, DEADZONE_PX, HOLD_MS, SATURATION_PX } from './gesty';
 
-/** Ten sam kształt ma render (docs/22 §1) – celownik i pasek siły. */
+/**
+ * Ten sam kształt ma render (docs/22 §1) – celownik czyta `aim` i `holding`.
+ * `power` to siła do podglądu – w F0 nieużywana przez render/HUD (pasek siły to F1).
+ */
 export interface ViewState {
   /** Ostatni cel z trwającego zamachu albo null (= cel domyślny / wystawa do partnera). */
   aim: Vec2 | null;
   /** Jakiś palec albo spacja trzyma zamach. */
   holding: boolean;
-  /** Siła 0..1 z czasu trzymania – ta sama krzywa, którą sim liczy z ticków. */
+  /** Siła 0..1 z czasu trzymania – ta sama krzywa, którą sim liczy z ticków (holdPower). */
   power: number;
 }
 
@@ -35,7 +38,7 @@ export const KEY_NEW_SET = 'n';
 /**
  * Sklejanie komend jednej klatki: ostatnia `move` i ostatnia `aim` per zawodnik
  * wygrywają, `swing` i `release` zostają wszystkie w kolejności (tapnięcie to
- * oba w jednej klatce). `new-set` nie ma adresata – przechodzi bez zmian.
+ * oba w jednej klatce). Każda komenda ma adresata (`player`) – nowy set nie jest komendą sim.
  */
 export function coalesceCommands(commands: readonly Command[]): Command[] {
   const lastIndex = new Map<string, number>();
