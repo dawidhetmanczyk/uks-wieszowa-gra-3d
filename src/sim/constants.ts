@@ -87,6 +87,13 @@ export const SET_APEX = 3.0;
 export const NET_CLEARANCE = 0.12;
 /** Rozrzut celu w metrach przy zerowej jakości timingu (gracz). F0. */
 export const NOISE_MAX_PLAYER_M = 2.2;
+/** Serwis o sile poniżej tej wartości jest lobem (łuk z apogeum), powyżej – płaskim strzałem. F0. */
+export const SERVE_LOB_POWER = 0.5;
+/** Apogeum lobu serwisowego nad punktem wybicia: siła 0 → MAX, siła SERVE_LOB_POWER → MIN. F0. */
+export const SERVE_LOB_APEX_MAX = 2.6;
+export const SERVE_LOB_APEX_MIN = 1.2;
+/** Wysokość, na której tor opadającej piłki wyznacza punkt przyjęcia (środek pasma przyjęcia). F0. */
+export const INTERCEPT_HEIGHT = 1.1;
 
 // Zasady (docs/20 §2) ----------------------------------------------------
 export const MAX_TOUCHES = 3;
@@ -123,3 +130,36 @@ export const SETTER_MAX_X = 2.5;
 export const ATTACK_MAX_X = 3.5;
 /** Margines od linii dla celów AI i celownika (piłka ma lądować w boisku). */
 export const TARGET_MARGIN = 0.4;
+
+// [F0] Stałe rdzenia sim dodane przy implementacji (kontrakt ich nie wymieniał) --
+/** Piłka w ręce serwującego jest wysunięta o tyle w stronę siatki. */
+export const SERVE_BALL_FORWARD = 0.35;
+/** Kontakt dozwolony także tuż za siatką (|z| poniżej tej wartości) – ręce nad siatką. */
+export const NET_CONTACT_TOLERANCE_Z = 0.35;
+/** Zawodnik nie podchodzi do siatki bliżej niż PLAYER_R + ten margines. */
+export const PLAYER_NET_MARGIN = 0.05;
+/** O tyle zawodnik może wyjść poza linię boczną (x) i za linię końcową (z). */
+export const PLAYER_OUT_X = 2.0;
+export const PLAYER_OUT_Z = 2.5;
+/** Jakość timingu na krawędzi zasięgu (poziomo i pionowo); w środku = 1. */
+export const QUALITY_EDGE = 0.4;
+/** Pasma wysokości idealnego kontaktu wg rodzaju, względem stóp zawodnika (docs/22 §3 pkt 3). */
+export const BAND_RECEIVE: readonly [number, number] = [0.6, 1.8];
+export const BAND_SET: readonly [number, number] = [1.6, 2.4];
+export const BAND_ATTACK: readonly [number, number] = [2.0, REACH_TOP_STANDING];
+/** Auto-skok: piłka poziomo nie dalej niż REACH_H + zapas, nie wyżej niż REACH_TOP_JUMP + zapas,
+ *  i nie wznosi się szybciej niż AUTO_JUMP_MAX_VY (opada albo jest przy apogeum). */
+export const AUTO_JUMP_H_EXTRA = 0.4;
+export const AUTO_JUMP_TOP_EXTRA = 0.3;
+export const AUTO_JUMP_MAX_VY = 1.0;
+/** Odbicie od siatki: tłumienie składowych stycznych (x, y). */
+export const BALL_NET_TANGENT_FACTOR = 0.8;
+/** Cel przyjęcia/wystawy po szumie nie bliżej siatki niż to (żeby piłka nie leciała w siatkę). */
+export const OWN_TARGET_MIN_Z = 0.6;
+/** Cel domyślny ataku („między rywalami”) nie bliżej siatki niż to. */
+export const DEFAULT_TARGET_MIN_Z = 2.0;
+/** Piłka na podłodze po punkcie zatrzymuje się poniżej tych prędkości (koniec drgań). */
+export const BALL_REST_VY = 0.3;
+export const BALL_REST_VXZ = 0.05;
+/** Powyżej tej prędkości poziomej zawodnik obraca się w kierunku ruchu. */
+export const FACING_MIN_SPEED = 0.2;

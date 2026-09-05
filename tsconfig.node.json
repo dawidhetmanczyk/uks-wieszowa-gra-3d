@@ -15,5 +15,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["vite.config.ts", "harness/**/*.ts"]
+  "include": ["vite.config.ts", "harness/**/*.ts"],
+  "exclude": ["harness/wyniki"]
 }

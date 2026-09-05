@@ -57,7 +57,8 @@ export function sideOf(z: number): TeamId {
 /** Pozycja bazowa (przyjęcie): dwójka w połowie głębokości, rozstawiona w x. */
 export function basePosition(team: TeamId, slot: 0 | 1): Vec2 {
   const s = sideSign(team);
-  // Slot 0 stoi z lewej z punktu widzenia własnej drużyny (patrzącej na siatkę).
+  // Slot 0 (gracz) stoi po prawej stronie ekranu (x < 0 dla drużyny 0 – prawo ekranu to −x),
+  // slot 1 (partner) po lewej. Dla drużyny 1 lustrzanie.
   const x = (slot === 0 ? -BASE_SPREAD_X : BASE_SPREAD_X) * -s;
   return { x, z: s * BASE_DEPTH };
 }

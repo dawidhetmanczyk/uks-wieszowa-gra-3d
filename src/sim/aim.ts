@@ -25,7 +25,8 @@ export function aimFromDirection(dirX: number, dirY: number, team: TeamId): Vec2
   const s = -sideSign(team); // znak połowy rywali
   const depth = -ny; // w górę ekranu = głębiej
   const target: Vec2 = {
-    x: s * nx * AIM_X_RANGE,
+    // Prawo ekranu = −x świata (układ prawoskrętny, kamera patrzy w +z); dla drużyny 1 odwrotnie.
+    x: -s * nx * AIM_X_RANGE,
     z: s * (AIM_DEPTH_CENTER + depth * AIM_DEPTH_RANGE),
   };
   return clampTargetToOpponentHalf(target, team);

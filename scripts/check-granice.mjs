@@ -44,7 +44,7 @@ const problems = [];
 let files = 0;
 for (const dir of DIRS) {
   const abs = join(ROOT, dir);
-  let list = [];
+  let list;
   try {
     list = walk(abs);
   } catch {

@@ -14,6 +14,7 @@ import {
   BALL_R,
   DT,
   GRAVITY as G,
+  INTERCEPT_HEIGHT,
   NET_CLEARANCE,
   NET_HALF_W,
   NET_HEIGHT,
@@ -133,19 +134,37 @@ export function predictLanding(
     pos: { x: 0, z: 0 },
     tick: 0,
     hitsNet: false,
+    intercept: { x: 0, z: 0 },
+    interceptTick: 0,
   };
   const p = { x: pos.x, y: pos.y, z: pos.z };
   const v = { x: vel.x, y: vel.y, z: vel.z };
+  // Punkt przyjęcia: pierwsza chwila, gdy piłka opada i jest na INTERCEPT_HEIGHT lub niżej.
+  let interceptFound = v.y < 0 && p.y <= INTERCEPT_HEIGHT;
+  res.intercept.x = p.x;
+  res.intercept.z = p.z;
+  res.interceptTick = nowTick;
   const maxSteps = Math.round(PREDICT_MAX_S / DT);
   for (let i = 1; i <= maxSteps; i++) {
     const prevZ = p.z;
     stepBall(p, v);
+    if (!interceptFound && v.y < 0 && p.y <= INTERCEPT_HEIGHT) {
+      interceptFound = true;
+      res.intercept.x = p.x;
+      res.intercept.z = p.z;
+      res.interceptTick = nowTick + i;
+    }
     if (p.y - BALL_R <= 0) {
       res.valid = true;
       res.pos.x = p.x;
       res.pos.z = p.z;
       res.tick = nowTick + i;
       res.hitsNet = false;
+      if (!interceptFound) {
+        res.intercept.x = p.x;
+        res.intercept.z = p.z;
+        res.interceptTick = res.tick;
+      }
       return res;
     }
     if (prevZ !== 0 && Math.sign(p.z) !== Math.sign(prevZ) && Math.abs(p.x) <= NET_HALF_W) {
@@ -155,6 +174,11 @@ export function predictLanding(
         res.pos.z = prevZ; // punkt przy siatce po stronie, z której leciała
         res.tick = nowTick + i;
         res.hitsNet = true;
+        if (!interceptFound) {
+          res.intercept.x = p.x;
+          res.intercept.z = prevZ;
+          res.interceptTick = res.tick;
+        }
         return res;
       }
     }

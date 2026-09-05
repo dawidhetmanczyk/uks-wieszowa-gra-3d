@@ -120,6 +120,9 @@ export interface ContactInfo {
 /**
  * Przewidywane lądowanie piłki z równania toru (bez szumu, bez zawodników).
  * `hitsNet` = tor kończy się na siatce; wtedy pos to punkt przy siatce.
+ * `intercept` = gdzie opadająca piłka przecina INTERCEPT_HEIGHT (miejsce przyjęcia
+ * – przy płaskim torze leży metry przed punktem lądowania); gdy tor kończy się
+ * wcześniej (siatka) albo piłka już jest niżej, równe pos / pozycji bieżącej.
  */
 export interface LandingPrediction {
   valid: boolean;
@@ -127,6 +130,8 @@ export interface LandingPrediction {
   /** Tick sim, w którym piłka dotknie podłogi (lub siatki). */
   tick: number;
   hitsNet: boolean;
+  intercept: Vec2;
+  interceptTick: number;
 }
 
 export type SimEvent =

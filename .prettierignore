@@ -3,3 +3,5 @@ node_modules/
 pnpm-lock.yaml
 docs/zrzuty/
 harness/wyniki/
+# Dokumenty (CLAUDE.md, docs/, README) pisze Dawid – prettier ich nie przestawia.
+*.md

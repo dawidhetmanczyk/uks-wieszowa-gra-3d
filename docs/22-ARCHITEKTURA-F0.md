@@ -53,7 +53,9 @@ interface GameRenderer {
 ### src/input (dotyk, klawiatura → komendy)
 
 ```ts
-createInput(target: HTMLElement): InputController
+createInput(target: HTMLElement, activePlayer?: () => PlayerId): InputController
+                                   // activePlayer = żywy odczyt state.active (adresat gestu w chwili zdarzenia,
+                                   // nie z ostatniego poll – przełączenie zachodzi w step w tej samej klatce)
 interface InputController {
   poll(state: SimState): Command[]   // raz na klatkę, przed krokami sim; komendy dla state.active
   view(): ViewState
@@ -87,7 +89,7 @@ interface DevHooks {
   version: string
   state(): SimState                                                 // żywa referencja, tylko do odczytu
   newSet(opts?: { seed?: number; servingTeam?: TeamId; humanControl?: boolean }): void
-  frameTimes(): number[]        // czasy klatek w ms (rAF delta), bufor 4096; resetFrameTimes(): void
+  frameTimes(): number[]        // czasy klatek w ms (rAF delta), bufor 16384; resetFrameTimes(): void
   renderInfo(): { calls: number; triangles: number; programs: number }
   reachWindow(player: PlayerId): { enterInS: number; exitInS: number } | null   // względem teraz
 }
@@ -101,7 +103,7 @@ interface DevHooks {
 - Piłka na podłodze: w boisku (cień dotyka linii = w boisku, promień 0,105) → punkt dla drużyny z drugiej strony; poza boiskiem → punkt dla drużyny przeciwnej do ostatniego kontaktu.
 - Siatka: przejście z = 0 poniżej 2,24 w pasie → odbicie z prędkością × √0,4; wymiana trwa. Przejście poniżej krawędzi poza pasem (za słupkami) → `under-net`, punkt dla rywali ostatniego kontaktu **[F0]**.
 - Punktacja: do 7, przewaga 2, limit 10. Po punkcie pauza 1,5 s, potem serwis drużyny, która wygrała punkt; w drużynie serwują naprzemiennie **[F0]**. Set zaczyna gracz (drużyna 0, zawodnik 0), chyba że `servingTeam: 1`.
-- Serwis: serwujący stoi za linią końcową (x = ±2, z = ±9,6), piłka w ręce na 2,0 m. Nie rusza się do serwisu **[F0]**. Bez paska timingu w F0 – serwis gracza ma jakość 1 (zero szumu); siła z czasu trzymania, kierunek z celu. AI serwuje po 1,0 s.
+- Serwis: serwujący stoi za linią końcową (x = ±2, z = ±9,6), piłka w ręce na 2,0 m. Nie rusza się do serwisu **[F0]**. Bez paska timingu w F0 – serwis gracza ma jakość 1 (zero szumu); siła z czasu trzymania, kierunek z celu. Siła < 0,5 = **lob** (łuk z apogeum 2,6 → 1,2 m nad wybiciem, jak serwis dzieci – piłka opada stromo i pierścień lądowania jest miejscem przyjęcia), siła ≥ 0,5 = płaski strzał 10,5–16 m/s; lob, który nie przeszedłby nad siatką, staje się strzałem **[F0]**. AI serwuje po 1,0 s.
 
 ## 3. Model uderzenia: „przytrzymaj do kontaktu” [F0]
 
@@ -120,7 +122,7 @@ Koncepcja mówi „dotknięcie – timing względem piłki” i „czas trzymani
 
 Dotyk (Pointer Events, `touch-action: none`):
 
-- **Palec w dół i ruch > 12 px w pierwszych 120 ms** = przeciągnięcie = ruch: wirtualny joystick względem punktu dotknięcia, nasycenie 70 px, góra ekranu = w stronę siatki. Trwa do puszczenia; komenda `move` tylko przy zmianie wektora.
+- **Palec w dół i ruch > 12 px w pierwszych 120 ms** = przeciągnięcie = ruch: wirtualny joystick względem punktu dotknięcia, nasycenie 70 px, góra ekranu = w stronę siatki (+z), prawo ekranu = **−x świata** (układ prawoskrętny Three.js, kamera patrzy w +z; ten sam znak w `aim.ts` i w klawiaturze, render nic nie odbija). Trwa do puszczenia; komenda `move` tylko przy zmianie wektora.
 - **Palec w dół i bez ruchu przez 120 ms** = zamach (`swing`, cel null). Dalsze przesunięcie palca w trakcie trzymania = **celowanie** (kierunek od punktu dotknięcia → `aimFromDirection`; celownik na połowie rywali podąża). Puszczenie = `release`.
 - **Tapnięcie** (puszczenie przed 120 ms, bez ruchu) = `swing` + `release` w tej samej klatce → dzięki oknu 0,12 s działa jako „uderz teraz”; bez celu = wystawa do partnera przy 1./2. odbiciu.
 - **Drugi palec** podczas przeciągania = zamach (żeby dało się biec i uderzać w poziomie, dwoma kciukami).
@@ -140,16 +142,16 @@ Docs/20 §3.1: „ten, do którego leci piłka, z histerezą”. Doprecyzowanie,
 
 ## 6. AI (src/ai) wg docs/20 §6, jeden profil
 
-- **Percepcja**: co `reactionTicks` odczyt `sim.landing` + błąd `positionErrorM × trójkątny` (stały do następnego odczytu). Piłka nie w locie → brak.
+- **Percepcja**: co `reactionTicks` odczyt `sim.landing` + błąd `positionErrorM × trójkątny` (stały do następnego odczytu). Piłka nie w locie → brak. Odczytywany punkt: przed 3. odbiciem własnej drużyny (atak, kontakt wysoko) – `landing.pos`; w pozostałych przypadkach – `landing.intercept`, czyli miejsce, gdzie opadająca piłka przecina 1,1 m (przy płaskim torze leży metry przed lądowaniem; stojąc na lądowaniu zawodnik dostaje piłkę przy kolanach na 40 ms) **[F0]**.
 - **Rola w parze**: gdy piłka leci na naszą stronę – do piłki idzie ten z krótszym czasem dojścia (odległość / maxSpeed), histereza 0,15 s. Drugi: przed 1. odbiciem → miejsce rozgrywającego (`setterSpot`), przed 2. → miejsce ataku (`attackSpot`), przed 3. → asekuracja (pozycja bazowa). Piłka po drugiej stronie → pozycje bazowe.
 - **Partner gracza** (gdy `humanControl` i para zawiera `sim.active`): „nie zabieraj gry” – jeśli aktywny człowiek zdąży do lądowania (czas dojścia ≤ czas lotu + 0,2 s), partner nie idzie do piłki i nie zamachuje się; idzie na pozycję rozgrywającego/ataku. Wyjątek: człowiek nie zdąży.
 - **Zamach**: w roli „do piłki”, gdy `reachWindow` mówi, że piłka wejdzie w zasięg w ≤ 0,1 s albo już jest → `swing` z `power` z profilu; `release` po kontakcie albo po 0,5 s. 1./2. odbicie → cel null (do partnera), chyba że partner dalej niż 6 m od miejsca ataku → kiwka (cel „między rywalami”, siła 0,1). 3. odbicie → cel `defaultAttackTarget` + szum `noiseM × trójkątny`. Serwis: po 1,0 s, cel „między rywalami” + szum, siła z `servePower`.
-- **Ruch**: `move` = kierunek do celu × min(1, maxSpeed/4,6), z hamowaniem w promieniu 0,15 m; do piłki staje 0,3 m za punktem lądowania (od strony własnej linii końcowej).
+- **Ruch**: `move` = kierunek do celu × min(1, maxSpeed/4,6), z hamowaniem w promieniu 0,15 m; do piłki staje 0,3 m za punktem lądowania (atak) albo 0,15 m za punktem przyjęcia (od strony własnej linii końcowej).
 - **Nowicjusz [F0]**: reactionTicks 30, positionErrorM 0,6, maxSpeed 3,6, aggression 0,5, caution 0,5, noiseM 1,0, servePower [0,2, 0,6], attackPower [0,3, 0,7].
 
 ## 7. Render (docs/20 §4.1, bez powtórek)
 
-- Kamera: `(camX, 3.2, −15)` (6 m za linią końcową drużyny 0), `lookAt(camX, 1.1, 0)`. `camX` → lerp 0,08/klatkę (w 60 fps; niezależne od fps: `1 − 0.92^(dt·60)`) do `0.6·x_aktywnego + 0.4·x_piłki`. FOV pionowe: portret 62°, poziom 48° **[F0]**. Przy ataku aktywnego (event `contact` kind attack) dojazd −4 % FOV w 200 ms i powrót. Kamera nie obraca się.
+- Kamera: `(camX, 3.2, −15)` (6 m za linią końcową drużyny 0), `lookAt(camX, 1.1, 0)`. `camX` → lerp 0,08/klatkę (w 60 fps; niezależne od fps: `1 − 0.92^(dt·60)`) do `0.6·x_aktywnego + 0.4·x_piłki`. FOV pionowe: portret 72° (przy 62° partner 4,5 m obok wypadał z kadru na 390 px), poziom 48° **[F0]**. Przy ataku aktywnego (event `contact` kind attack) dojazd −4 % FOV w 200 ms i powrót. Kamera nie obraca się.
 - Scena: podłoga granat `#0A2540` (płaszczyzna 30 × 40 m, `receiveShadow`), linie białe 5 cm (jedna geometria, `LineSegments` albo cienkie płaszczyzny), siatka jako płaszczyzna półprzezroczysta z białą taśmą górną, słupki. Kapsuły `CapsuleGeometry(0.3, 1.2, 4, 12)` – gracz `#0A5AA8`, partner `#109CE4`, rywale `#D62410` i `#B81E0C`; piłka `#F79300` (sfera r 0,105, 16 × 12). Cień piłki – płaskie ciemne koło r 0,13 na y = 0,005. Pierścień lądowania (`RingGeometry`, bursztyn `#FBB014`) gdy `landing.valid && !hitsNet`. Pierścień aktywnego (biały, r 0,45) pod stopami `state.active`. Celownik (pierścień + krzyż) na `view.aim ?? defaultAttackTarget` gdy `view.holding`.
 - Światło: `DirectionalLight` z cieniem (mapa 1024, kamera ortogonalna dopasowana do boiska) + `HemisphereLight`. Bez postprocesu. `setPixelRatio(min(devicePixelRatio, 2))`.
 - Budżet: ≤ 60 draw calls (oczekiwane ~16), ≤ 120 k trójkątów.
@@ -157,7 +159,7 @@ Docs/20 §3.1: „ten, do którego leci piłka, z histerezą”. Doprecyzowanie,
 ## 8. Harness (Playwright, Chromium)
 
 - `harness/perf.ts`: 390 × 844, `deviceScaleFactor 3`, `isMobile`, `hasTouch`; CDP `Emulation.setCPUThrottlingRate {rate: 4}`; `?ai=1&seed=7`; 60 s; odczyt `frameTimes()` → p50/p95 czasu klatki i fps p95 = 1000 / p95; `renderInfo()` po klatce. Wynik JSON + tekst do `harness/wyniki/perf-<data>.json` i na stdout. Uwaga: headless Chromium używa SwiftShader – domyślnie tryb headed z GPU; flaga `--headless` do porównania; w raporcie zaznaczyć, który tryb.
-- `harness/przyjecie.ts`: 50 prób; każda: `newSet({seed: 1000+i, servingTeam: 1, humanControl: true})`, czekanie na serwis, odczyt `reachWindow(active)`; tap (`touchscreen.tap`) w losowym momencie okna [wejście, wejście + 0,25 s] (PRNG w harnessie z ziarna); sukces = `lastContact.player === active` i `landing.valid` po naszej stronie (piłka leci do partnera). Raport: odsetek sukcesów, średnia jakość, histogram opóźnień.
+- `harness/przyjecie.ts`: 50 prób; każda: `newSet({seed: 1000+i, servingTeam: 1, humanControl: true})`, czekanie na serwis, **dobieg** aktywnego do punktu 0,3 m za `landing.pos` klawiszami WASD (prawdziwa warstwa input; serwis AI „między rywalami” ląduje ~1,8 m od odbierającego, więc bez dobiegu przyjęcie jest strukturalnie niemożliwe), odczyt `reachWindow(active)` w każdym odczycie (dobieg zmienia okno); tap (`touchscreen.tap`) w losowym momencie okna [wejście, wejście + 0,25 s] (PRNG w harnessie z ziarna); sukces = `lastContact.player === active` (nie bierny) i `landing.valid` po naszej stronie (piłka leci do partnera). Raport: odsetek sukcesów, średnia jakość, histogram opóźnień, powody porażek.
 - `harness/zrzuty.ts`: zrzuty 390 × 844 i 1280 × 720 do `docs/zrzuty/` (serwis, wymiana, po punkcie).
 
 ## 9. Lista założeń przyjętych w F0 (koncepcja milczała)
@@ -172,6 +174,13 @@ Docs/20 §3.1: „ten, do którego leci piłka, z histerezą”. Doprecyzowanie,
 8. Naprzemienny serwujący w drużynie.
 9. Miejsca rozgrywającego (2,2 m od siatki) i ataku (1,1 m), apogea 3,4 / 3,0 m, prędkości 9–19 m/s atak, 10,5–16 serwis.
 10. Tłumienie liniowe 0,1 1/s z dokładnym całkowaniem (tor przewidywalny bit w bit).
-11. Kamera: FOV 62° portret / 48° poziom; `lookAt` na 1,1 m.
-12. Cel „między rywalami” = środek odcinka między rywalami przycięty do boiska z marginesem 0,4 m i min. 0,8 m od siatki.
+11. Kamera: FOV 72° portret / 48° poziom; `lookAt` na 1,1 m.
+12. Cel „między rywalami” = środek odcinka między rywalami przycięty do boiska z marginesem 0,4 m i min. 2,0 m od siatki.
 13. Profil Nowicjusz – wartości startowe do strojenia w F1.
+14. Oś x: prawo ekranu = −x świata (render nie odbija sceny – odbicie zepsułoby w F3 tekst na banerach i znak na koszulkach); mapowanie w `aim.ts` i `gesty.ts`. Gracz (slot 0) stoi po prawej stronie ekranu, partner po lewej.
+15. Podłoga: miejsce dotknięcia interpolowane w obrębie ticku (aut oceniany tam, gdzie piłka naprawdę dotknęła parkietu); przejście nad siatką rozstrzygane przed zamachami w tym samym ticku.
+16. Auto-skok ma gałąź predykcyjną (skok wtedy, gdy w apogeum piłka będzie w zasięgu nad zawodnikiem), a AI zamachuje się z wyprzedzeniem ~0,47 s dla piłek wchodzących w zasięg od góry – bez tego atak był zawsze lobem (kontakt na 2,6 m, prędkość niezależna od siły). Po zmianie: siła 0,25–0,5 → ~12,5 m/s, 0,5–0,75 → ~14,4 m/s, kontakt ~2,9 m.
+17. Bufor czasów klatek 16384 (monitor 150 Hz mieści 60 s pomiaru).
+18. Harness przyjęcia dobiega klawiaturą do punktu przyjęcia (`landing.intercept`) przed tapem (§8).
+19. Predykcja ma dwa punkty: lądowanie (pierścień na ekranie, docs/20) i punkt przyjęcia na 1,1 m (`intercept`, używany przez AI i harness). Przy płaskim serwisie różnią się o 1–3 m. **Pytanie na bramę F0:** czy pierścień ma pokazywać lądowanie (jak w koncepcji), czy miejsce, gdzie trzeba stanąć.
+20. Serwis lob/strzał z siły (§2) – bez tego serwis Nowicjusza był zawsze płaski i okno przyjęcia przy pierścieniu trwało ~40 ms.
