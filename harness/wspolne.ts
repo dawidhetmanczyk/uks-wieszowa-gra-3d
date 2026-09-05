@@ -95,7 +95,7 @@ export interface DevHooks {
   /** Żywa referencja, tylko do odczytu. */
   state(): SimStateView;
   newSet(opts?: { seed?: number; servingTeam?: TeamId; humanControl?: boolean }): void;
-  /** Czasy klatek w ms (delta rAF), bufor 4096. */
+  /** Czasy klatek w ms (delta rAF), bufor 16384 (FRAME_TIME_CAPACITY w src/loop/petla.ts). */
   frameTimes(): number[];
   resetFrameTimes(): void;
   renderInfo(): { calls: number; triangles: number; programs: number };
@@ -110,7 +110,7 @@ declare global {
 }
 
 /** Rozmiar bufora czasów klatek w hakach – po jego zapełnieniu pomiar jest ucięty. */
-export const FRAME_BUFFER = 4096;
+export const FRAME_BUFFER = 16384;
 export const TICK_HZ = 120;
 
 // Argumenty CLI --------------------------------------------------------------

@@ -129,7 +129,7 @@ async function main(): Promise<void> {
       );
     }
     if (bufferFull) {
-      // Bufor w pętli jest pierścieniowy: zostaje ostatnie 4096 klatek, czyli na ekranie
+      // Bufor w pętli jest pierścieniowy: zostaje ostatnie FRAME_BUFFER klatek, czyli na ekranie
       // 144 Hz tylko ~28 s z 60. Liczby są prawdziwe, ale dotyczą końcówki pomiaru.
       const coveredS = frames.reduce((s, t) => s + t, 0) / 1000;
       warnings.push(
