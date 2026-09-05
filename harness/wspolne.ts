@@ -87,6 +87,8 @@ export interface PlayerView {
   id: PlayerId;
   team: TeamId;
   pos: Vec3;
+  /** Tick otwarcia okna zamachu; -1 = brak – harness odczytuje z niego chwilę tapu. */
+  swingStartTick: number;
 }
 
 /** Haki deweloperskie na `window.__sw3d` – identyczne z docs/22 §1. */

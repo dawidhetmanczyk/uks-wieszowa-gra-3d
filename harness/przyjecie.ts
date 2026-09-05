@@ -62,6 +62,12 @@ const RESET_TIMEOUT_MS = 2000;
 const SERVE_TIMEOUT_MS = 5000;
 const REACH_POLL_MS = 8;
 const REACH_TIMEOUT_MS = 6000;
+/**
+ * Skok ticków sim między dwoma odczytami większy niż to = pętla renderu przystanęła
+ * (okno w tle, obciążony CPU – pętla nadrabia do 30 kroków na klatkę). Tap i dobieg
+ * są wtedy spóźnione nie z winy sterowania, więc próba jest liczona osobno.
+ */
+const STALL_TICKS = 12;
 /** Dobieg: cel 0,15 m za punktem przyjęcia (`landing.intercept`, tor na 1,1 m), od strony własnej linii końcowej. */
 const RUN_BEHIND_M = 0.15;
 /** Poniżej tej odległości od celu dobiegu klawisze idą w górę (hamowanie sim dokończy). */
@@ -82,6 +88,8 @@ interface Attempt {
   seed: number;
   success: boolean;
   reason: FailReason | null;
+  /** Pętla renderu przystanęła w trakcie próby (skok > STALL_TICKS między odczytami) – wynik niewiarygodny. */
+  stalled: boolean;
   /** Wylosowane d – ile ms względem wejścia w zasięg miał paść tap (ujemne = przed). */
   plannedDelayMs: number;
   /** Faktyczne opóźnienie tapu względem wejścia w zasięg, z ticków sim. */
@@ -135,6 +143,7 @@ async function main(): Promise<void> {
         seed,
         success: false,
         reason: null,
+        stalled: false,
         plannedDelayMs,
         tapDelayMs: null,
         contactDelayMs: null,
@@ -203,6 +212,7 @@ async function main(): Promise<void> {
       let tapAtTick: number | null = null;
       let lastActive: PlayerId | null = null;
       let readyToTap = false;
+      let prevTick: number | null = null;
       const held = new Set<string>();
       while (Date.now() < pollDeadline) {
         const snap = await page.evaluate(() => {
@@ -220,6 +230,8 @@ async function main(): Promise<void> {
             pointReason: s.rally.pointReason,
           };
         });
+        if (prevTick !== null && snap.tick - prevTick > STALL_TICKS) attempt.stalled = true;
+        prevTick = snap.tick;
         attempt.phaseAfter = snap.phase;
         attempt.pointReason = snap.pointReason;
         if (snap.phase === 'rally') {
@@ -240,7 +252,11 @@ async function main(): Promise<void> {
           break;
         }
         if (snap.phase !== 'rally') break;
-        if (snap.reach) {
+        // Plan tapu z prognozy wejścia w zasięg. Gdy piłka JUŻ jest w zasięgu (enterInS ≤ 0),
+        // reachWindow zwraca „teraz” – wtedy prognoza zostaje zamrożona na ostatnim odczycie
+        // sprzed wejścia; bez tego tapAtTick uciekałby z każdym odczytem i tapy z dodatnim
+        // opóźnieniem nigdy by nie padły.
+        if (snap.reach && (enterTick === null || snap.reach.enterInS > 0)) {
           attempt.reach = snap.reach;
           enterTick = snap.tick + Math.round(snap.reach.enterInS * TICK_HZ);
           tapAtTick = enterTick + Math.round((plannedDelayMs / 1000) * TICK_HZ);
@@ -283,7 +299,15 @@ async function main(): Promise<void> {
       });
       await page.touchscreen.tap(TAP_X, TAP_Y);
       attempt.activeAtTap = pre.active;
-      attempt.tapDelayMs = ((pre.tick - enterTick) / TICK_HZ) * 1000;
+      // Chwila tapu = tick, w którym sim otworzył okno zamachu (swingStartTick), nie tick
+      // sprzed wysłania zdarzenia – między nimi jest jedna klatka. Gdy okno już się zamknęło
+      // (kontakt w tym samym ticku), zostaje bieżący tick.
+      const tapTick = await page.evaluate((p) => {
+        const s = window.__sw3d!.state();
+        const start = s.players[p].swingStartTick;
+        return start >= 0 ? start : s.tick;
+      }, pre.active);
+      attempt.tapDelayMs = ((tapTick - enterTick) / TICK_HZ) * 1000;
 
       await sleep(SETTLE_MS);
       const post = await page.evaluate(() => {
@@ -317,16 +341,19 @@ async function main(): Promise<void> {
     }
 
     // Podsumowanie.
-    const successes = attempts.filter((a) => a.success);
-    const tapped = attempts.filter((a) => a.tapDelayMs !== null);
-    const successRate = attempts.length > 0 ? successes.length / attempts.length : NaN;
+    // Statystyki tylko z prób bez przystanku pętli – reszta jest raportowana osobno.
+    const stalled = attempts.filter((a) => a.stalled);
+    const valid = attempts.filter((a) => !a.stalled);
+    const successes = valid.filter((a) => a.success);
+    const tapped = valid.filter((a) => a.tapDelayMs !== null);
+    const successRate = valid.length > 0 ? successes.length / valid.length : NaN;
     const meanQuality = mean(successes.map((a) => a.contact?.quality ?? 0));
     const meanContactDelay = mean(
       successes.map((a) => a.contactDelayMs).filter((d): d is number => d !== null),
     );
     const histogram = buildHistogram(tapped);
     const reasons = new Map<FailReason, number>();
-    for (const a of attempts) {
+    for (const a of valid) {
       if (a.reason) reasons.set(a.reason, (reasons.get(a.reason) ?? 0) + 1);
     }
 
@@ -342,6 +369,8 @@ async function main(): Promise<void> {
       tap: { x: TAP_X, y: TAP_Y, spreadMs: TAP_SPREAD_MS },
       viewport: spec,
       successCount: successes.length,
+      validCount: valid.length,
+      stalledCount: stalled.length,
       successRate,
       meanQuality,
       meanContactDelayMs: meanContactDelay,
@@ -358,14 +387,14 @@ async function main(): Promise<void> {
       `Tryb: ${result.mode}; gra ${version}; ${attemptsCount} prób; seed harnessu ${harnessSeed}; dobieg WASD, tap (${TAP_X}, ${TAP_Y}) w oknie [wejście − ${TAP_SPREAD_MS} ms, +${TAP_SPREAD_MS} ms]`,
     );
     console.log(
-      `Sukcesy: ${successes.length}/${attempts.length} (${fmt(successRate * 100)} %); średnia jakość udanych ${fmt(meanQuality, 2)}; średnie opóźnienie kontaktu ${fmt(meanContactDelay, 0)} ms`,
+      `Sukcesy: ${successes.length}/${valid.length} (${fmt(successRate * 100)} %) wiarygodnych prób; niewiarygodne (przystanek pętli renderu): ${stalled.length}; średnia jakość udanych ${fmt(meanQuality, 2)}; średnie opóźnienie kontaktu ${fmt(meanContactDelay, 0)} ms`,
     );
     console.log('Histogram opóźnienia tapu od wejścia w zasięg (prób / udanych):');
     for (const bin of histogram) {
       const bar = '█'.repeat(bin.count);
       console.log(`  ${bin.label.padEnd(14)} ${bar.padEnd(12)} ${bin.count} / ${bin.successes}`);
     }
-    const failed = attempts.filter((a) => !a.success);
+    const failed = valid.filter((a) => !a.success);
     console.log(`Porażki: ${failed.length}`);
     for (const [reason, count] of reasons) console.log(`  ${reason}: ${count}`);
     for (const a of failed) {
@@ -435,7 +464,7 @@ async function applyKeys(page: Page, held: Set<string>, desired: Set<string>): P
 }
 
 function report(a: Attempt): void {
-  const status = a.success ? 'OK  ' : 'FAIL';
+  const status = a.stalled ? 'STOP' : a.success ? 'OK  ' : 'FAIL';
   const delay = a.tapDelayMs === null ? '' : ` tap +${fmt(a.tapDelayMs, 0)} ms`;
   const q = a.success && a.contact ? ` jakość ${fmt(a.contact.quality, 2)}` : '';
   const reason = a.reason ? ` ${a.reason}` : '';
