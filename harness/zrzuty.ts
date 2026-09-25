@@ -1,12 +1,17 @@
 /**
- * Zrzuty ekranu do raportu fazy (docs/22 §8): 390 × 844 @2× i 1280 × 720 @1×,
- * trzy momenty: serwis (gracz trzyma piłkę, HUD z podpowiedzią), wymiana
- * (po pierwszym przyjęciu/wystawie AI vs AI), punkt (pauza po punkcie).
+ * Zrzuty ekranu do raportu fazy (docs/22 §8): telefon w poziomie 844 × 390 @2× (tak się
+ * gra), telefon w pionie 390 × 844 @2× i monitor 1280 × 720 @1×. Trzy momenty: serwis
+ * (gracz trzyma piłkę, HUD z podpowiedzią), wymiana (po pierwszym przyjęciu/wystawie
+ * AI vs AI), punkt (pauza po punkcie). W pionie najpierw zrzut nakładki „Obróć telefon”
+ * (z kontrolą, że mecz naprawdę stoi), potem furtka „Graj mimo to” i te same trzy zrzuty.
  *
  * Pliki lądują w docs/zrzuty/ i idą do repo – „czytelne” z CLAUDE.md znaczy
  * „zrzut w docelowym rozmiarze”, więc nazwa niesie rozmiar ekranu.
  *
- * Użycie: pnpm harness:zrzuty [--url <adres>] [--headless] [--build]
+ * Chromium bez limitu klatek (jak perf): z vsync przy wygaszonym monitorze pętla rysuje raz
+ * na sekundę i punkt w 60 s nie pada (2026-09-25, zrzut 1280 × 720). `--vsync` przywraca limit.
+ *
+ * Użycie: pnpm harness:zrzuty [--url <adres>] [--headless] [--vsync] [--build]
  */
 import { join, relative } from 'node:path';
 import type { Browser, Page } from 'playwright';
@@ -16,11 +21,13 @@ import {
   ROOT,
   ensureServer,
   fail,
+  landscapeSpec,
   launchBrowser,
   mobileSpec,
   modeLabel,
   openPage,
   parseArgs,
+  passRotateGate,
   sleep,
   specLabel,
   waitForHooks,
@@ -44,7 +51,9 @@ const POINT_TIMEOUT_MS = 60_000;
  */
 const POINT_SETTLE_MS = 300;
 
-type ShotName = 'serwis' | 'wymiana' | 'punkt';
+type ShotName = 'obrot' | 'serwis' | 'wymiana' | 'punkt';
+/** Nakładka ma zatrzymać mecz, nie tylko coś narysować: tyle czekamy i sprawdzamy, że tick stoi. */
+const GATE_HOLD_MS = 1000;
 
 interface Snapshot {
   tick: number;
@@ -76,8 +85,8 @@ async function main(): Promise<void> {
   // podglądu – inaczej vite preview zostawał żywy i skrypt wisiał.
   let browser: Browser | null = null;
   try {
-    browser = await launchBrowser(args.headless);
-    for (const spec of [mobileSpec(2), DESKTOP_SPEC]) {
+    browser = await launchBrowser(args.headless, { uncappedFrameRate: !args.vsync });
+    for (const spec of [landscapeSpec(2), mobileSpec(2), DESKTOP_SPEC]) {
       const screen = `${spec.width}x${spec.height}`;
       const { context, page, errors } = await openPage(browser, spec);
       errorsByScreen[screen] = errors;
@@ -139,6 +148,26 @@ async function captureScreen(
   console.log(`Otwieram ${url} – ${specLabel(spec)}`);
   await page.goto(url);
   const version = await waitForHooks(page);
+
+  // 0. Telefon w pionie: nakładka „Obróć telefon”. Zrzut, kontrola pauzy, furtka.
+  const portraitPhone = spec.isMobile && spec.width < spec.height;
+  if (portraitPhone) {
+    const gate = await capture(page, screen, 'obrot');
+    const t0 = await page.evaluate(() => window.__sw3d!.state().tick);
+    await sleep(GATE_HOLD_MS);
+    const hold = await page.evaluate(() => ({
+      tick: window.__sw3d!.state().tick,
+      paused: window.__sw3d!.paused(),
+    }));
+    if (!hold.paused) gate.notes.push('nakładka widoczna, a pętla nie stoi');
+    if (hold.tick !== t0) gate.notes.push(`mecz szedł pod nakładką: tick ${t0} → ${hold.tick}`);
+    else gate.notes.push(`mecz stoi pod nakładką: tick ${t0} przez ${GATE_HOLD_MS} ms`);
+    const passed = await passRotateGate(page);
+    if (!passed) gate.notes.push('brak furtki „Graj mimo to” – nakładka się nie pokazała');
+    shots.push(gate);
+    // Po furtce set od nowa, żeby zrzut serwisu pokazywał to samo co na innych ekranach.
+    await page.evaluate((s) => window.__sw3d!.newSet({ seed: s, humanControl: true }), SEED);
+  }
 
   // 1. Serwis: człowiek gra, serwują niebiescy, nikt nie tapnął – gracz trzyma piłkę.
   await sleep(SERVE_SETTLE_MS);

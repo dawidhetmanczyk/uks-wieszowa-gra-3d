@@ -1,19 +1,25 @@
 /**
- * Pomoce dla gracza (docs/20 §3.3): pierścień lądowania, pierścień aktywnego
+ * Pomoce dla gracza (docs/20 §3.3): pierścień „tu stań”, pierścień aktywnego
  * zawodnika, celownik ataku. Wszystko płaskie, tuż nad podłogą, na różnych
  * wysokościach i bez zapisu głębi – inaczej walczyłyby o głębię z podłogą i ze
  * sobą (współpłaszczyznowe przezroczyste płaszczyzny migają).
+ *
+ * Pierścień pokazuje MIEJSCE, GDZIE STANĄĆ – punkt, w którym opadająca piłka przecina
+ * 1,1 m (`landing.intercept`), nie punkt lądowania (decyzja Dawida, 2026-09-25). Dziecko
+ * biegnie do pierścienia, nie liczy toru: przy płaskim torze lądowanie leży 1–3 m za
+ * miejscem przyjęcia i kto stanął na nim, dostawał piłkę przy kolanach. Punkt lądowania
+ * zostaje czytelny z cienia piłki (actors.ts), który sunie pod piłką i kończy w nim.
  */
 import { Group, Mesh, MeshBasicMaterial, RingGeometry } from 'three';
 import { defaultAttackTarget } from '../sim/index';
 import type { SimState } from '../sim/index';
-import { COLOR_ACTIVE, COLOR_AIM, COLOR_LANDING } from './colors';
+import { COLOR_ACTIVE, COLOR_AIM, COLOR_STAND } from './colors';
 import { buildFlatRects } from './court';
 import type { ViewState } from './index';
 
 const RING_SEGMENTS = 32;
-const LANDING_Y = 0.01;
-const LANDING_R = { inner: 0.28, outer: 0.36 };
+const STAND_Y = 0.01;
+const STAND_R = { inner: 0.28, outer: 0.36 };
 const ACTIVE_Y = 0.012;
 const ACTIVE_R = { inner: 0.38, outer: 0.46 };
 const AIM_Y = 0.014;
@@ -47,11 +53,11 @@ export interface Markers {
 export function createMarkers(): Markers {
   const group = new Group();
 
-  const landingGeometry = flatRing(LANDING_R);
-  const landingMaterial = markerMaterial(COLOR_LANDING);
-  const landingRing = new Mesh(landingGeometry, landingMaterial);
-  landingRing.visible = false;
-  group.add(landingRing);
+  const standGeometry = flatRing(STAND_R);
+  const standMaterial = markerMaterial(COLOR_STAND);
+  const standRing = new Mesh(standGeometry, standMaterial);
+  standRing.visible = false;
+  group.add(standRing);
 
   const activeGeometry = flatRing(ACTIVE_R);
   const activeMaterial = markerMaterial(COLOR_ACTIVE);
@@ -87,9 +93,11 @@ export function createMarkers(): Markers {
     group,
     update(state, view) {
       const landing = state.landing;
-      landingRing.visible = state.rally.phase === 'rally' && landing.valid && !landing.hitsNet;
-      if (landingRing.visible) {
-        landingRing.position.set(landing.pos.x, LANDING_Y, landing.pos.z);
+      standRing.visible = state.rally.phase === 'rally' && landing.valid && !landing.hitsNet;
+      if (standRing.visible) {
+        // Punkt przyjęcia na 1,1 m; gdy piłka jest już niżej, sim podaje jej bieżące
+        // położenie – pierścień jedzie wtedy pod piłką aż do podłogi.
+        standRing.position.set(landing.intercept.x, STAND_Y, landing.intercept.z);
       }
 
       const active = state.players[state.active];
@@ -103,8 +111,8 @@ export function createMarkers(): Markers {
       }
     },
     dispose() {
-      landingGeometry.dispose();
-      landingMaterial.dispose();
+      standGeometry.dispose();
+      standMaterial.dispose();
       activeGeometry.dispose();
       activeMaterial.dispose();
       aimRingGeometry.dispose();

@@ -6,12 +6,15 @@
  * bez postprocesu. Budżet: ≤ 60 draw calls, ≤ 120 k trójkątów (CLAUDE.md).
  */
 import { Color, DirectionalLight, HemisphereLight, Scene, WebGLRenderer } from 'three';
-import type { SimState, Vec2 } from '../sim/index';
+import type { PlayerId, SimState, Vec2 } from '../sim/index';
 import { createActors } from './actors';
 import { createGameCamera } from './camera';
 import { COLOR_BACKGROUND, COLOR_GROUND_LIGHT, COLOR_SKY_LIGHT } from './colors';
 import { createCourt } from './court';
+import { createFramingMeter, type FramingStats } from './framing';
 import { createMarkers } from './markers';
+
+export type { FramingStats } from './framing';
 
 /** Stan wejścia potrzebny renderowi (celownik); dostarcza go src/input. */
 export interface ViewState {
@@ -52,6 +55,11 @@ export interface GameRenderer {
   info(): { calls: number; triangles: number; programs: number };
   /** Aktualne przełączniki jakości – rozszerzenie F0 poza kontrakt, dla haków dev. */
   options(): ResolvedRenderOptions;
+  /** Kadr zliczany co klatkę od ostatniego resetFraming() – pomiar „obaj w kadrze”. */
+  framing(): FramingStats;
+  resetFraming(): void;
+  /** Stopy zawodnika w px CSS okna z kamery ostatniej klatki; null przed pierwszą klatką. */
+  screenPos(state: SimState, player: PlayerId): { x: number; y: number } | null;
   dispose(): void;
 }
 
@@ -120,18 +128,35 @@ export function createRenderer(canvas: HTMLCanvasElement, opts: RenderOptions = 
       : 1;
   gameCamera.setAspect(startAspect);
 
+  const framing = createFramingMeter();
+  /** Rozmiar okna w px CSS z ostatniego resize – pomiar kadru liczy w tych jednostkach. */
+  let cssWidth = canvas.clientWidth;
+  let cssHeight = canvas.clientHeight;
+  let rendered = false;
+
   return {
     render(state, view, dtSeconds) {
       actors.update(state);
       markers.update(state, view);
       gameCamera.update(state, dtSeconds);
       renderer.render(scene, gameCamera.camera);
+      rendered = true;
+      // Po renderze macierze kamery są aktualne; 17 rzutów punktów na klatkę, bez alokacji.
+      framing.measure(state, gameCamera.camera, cssWidth, cssHeight);
     },
     resize(width, height, dpr) {
       renderer.setPixelRatio(Math.min(dpr, maxPixelRatio));
       // updateStyle = false: rozmiar kanwy w CSS ustawia arkusz (100vw/100dvh), nie inline style.
       renderer.setSize(width, height, false);
       gameCamera.setAspect(height > 0 ? width / height : 1);
+      cssWidth = width;
+      cssHeight = height;
+    },
+    framing: () => framing.stats(),
+    resetFraming: () => framing.reset(),
+    screenPos(state, player) {
+      if (!rendered) return null;
+      return framing.screenPos(state, gameCamera.camera, player, cssWidth, cssHeight);
     },
     info() {
       return {

@@ -16,7 +16,7 @@ import {
 import { aiCommands, createAi, type AiState } from '../ai/index';
 import { createRenderer, type GameRenderer, type RenderOptions } from '../render/index';
 import { createInput, KEY_NEW_SET, type InputController } from '../input/index';
-import { createHud, type Hud } from '../ui/index';
+import { createHud, createRotateGate, type Hud } from '../ui/index';
 import {
   DEV_HOOKS_VERSION,
   installDevHooks,
@@ -27,7 +27,7 @@ import {
 import { createAccumulator, createFrameDriver, createFrameTimeBuffer, drainSteps } from './petla';
 
 export type { DevHooks, NewSetOptions, ReachWindowSeconds, RenderInfo } from './haki';
-export type { RenderOptions, ResolvedRenderOptions } from '../render/index';
+export type { FramingStats, RenderOptions, ResolvedRenderOptions } from '../render/index';
 export { parseUrlParams, daySeed, type UrlParams } from './url';
 
 export interface GameOptions {
@@ -50,6 +50,12 @@ export interface Game {
   stop(): void;
   /** Żywy stan – ta sama referencja, którą krokuje pętla. */
   state(): SimState;
+  /**
+   * Wstrzymanie meczu (nakładka „Obróć telefon”): sim nie krokuje, komendy z wejścia
+   * przepadają, render stoi. Po wznowieniu akumulator startuje od zera – bez nadrabiania.
+   */
+  setPaused(paused: boolean): void;
+  paused(): boolean;
 }
 
 interface SetConfig {
@@ -113,6 +119,7 @@ export function startGame(opts: GameOptions): Game {
   let pending: Command[] = [];
   let fpsTimeMs = 0;
   let fpsFrames = 0;
+  let paused = false;
 
   function newSet(next: NewSetOptions = {}): void {
     config = {
@@ -129,6 +136,14 @@ export function startGame(opts: GameOptions): Game {
   }
 
   function frame(dt: number, frameMs: number | null): void {
+    if (paused) {
+      // Nakładka zasłania grę: nic nie krokuje i nic nie rysuje (bateria). Poll dalej, żeby
+      // kolejka wejścia się nie zapchała – ale komendy przepadają, bo gracz ich nie widział.
+      input.poll(state);
+      pending = [];
+      acc.acc = 0;
+      return;
+    }
     if (frameMs !== null) frameTimes.push(frameMs);
 
     // Poll zawsze – input utrzymuje stan gestu; komendy człowieka liczą się tylko, gdy gra człowiek.
@@ -202,8 +217,19 @@ export function startGame(opts: GameOptions): Game {
     renderInfo: () => renderer.info(),
     reachWindow: (player) => reachWindowInSeconds(state, player),
     renderOptions: () => renderer.options(),
+    framing: () => renderer.framing(),
+    resetFraming: () => renderer.resetFraming(),
+    screenPos: (player) => renderer.screenPos(state, player),
+    paused: () => paused,
   };
   const uninstallHooks = installDevHooks(hooks);
+
+  // Telefon w pionie: nakładka „Obróć telefon” i mecz stoi, dopóki gracz nie obróci
+  // telefonu albo nie wybierze furtki „Graj mimo to” (src/ui/orientation.ts).
+  const gate = createRotateGate({
+    root: canvas.parentElement ?? document.body,
+    onChange: (blocked) => setPaused(blocked),
+  });
 
   const driver = createFrameDriver(frame);
   driver.start();
@@ -216,10 +242,19 @@ export function startGame(opts: GameOptions): Game {
     window.removeEventListener('resize', resize);
     window.removeEventListener('keydown', onKeyDown);
     uninstallHooks();
+    gate.dispose();
     hud.dispose();
     input.dispose();
     renderer.dispose();
   }
 
-  return { newSet, stop, state: () => state };
+  function setPaused(next: boolean): void {
+    if (next === paused) return;
+    paused = next;
+    // Wznowienie liczy czas od następnej klatki – akumulator i komendy z przerwy są puste.
+    acc.acc = 0;
+    pending = [];
+  }
+
+  return { newSet, stop, state: () => state, setPaused, paused: () => paused };
 }

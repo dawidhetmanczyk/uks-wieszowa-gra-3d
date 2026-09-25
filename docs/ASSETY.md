@@ -29,4 +29,4 @@ Animacje specyficzne dla siatkówki (atak z wyskoku, przyjęcie dołem, wystawa 
 
 | Plik w repo | Źródło (URL) | Licencja | Data | SHA-256 | Użycie |
 |---|---|---|---|---|---|
-| – | – | – | – | – | – |
+| `src/ui/club-mark.webp` (160 × 160 px, 7248 B) | Znak klubu UKS Wieszowa ze strony klubu, skopiowany bez zmian z repo gry 2D: `github.com/dawidhetmanczyk/uks-wieszowa-gra`, `public/znak-klubu.webp` (commit `e6f99fd`, 2026-08-31; stan `origin/main` `fa4d432`) | **Nie CC0** – znak własny klubu UKS Wieszowa, użycie w grach klubu na polecenie Dawida (zadanie F0 z 2026-09-25: „nakładka ze znakiem klubu”). Nie wolno go redystrybuować poza projektami klubu. **Do potwierdzenia przez Dawida przy bramie F0.** | 2026-09-25 | `b20771711b07d064403bde64a874adba3187020dd06e00e8b4ce06d8fdd92557` | Nakładka „Obróć telefon” (src/ui/orientation.ts); Vite emituje plik z haszem do `/assets` |

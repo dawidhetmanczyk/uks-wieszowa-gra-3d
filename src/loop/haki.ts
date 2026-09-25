@@ -4,7 +4,7 @@
  * także w buildzie produkcyjnym – harness gra na `vite preview`.
  */
 import { DT, reachWindow, type PlayerId, type SimState, type TeamId } from '../sim/index';
-import type { ResolvedRenderOptions } from '../render/index';
+import type { FramingStats, ResolvedRenderOptions } from '../render/index';
 
 export const DEV_HOOKS_VERSION = '0.0.1-f0';
 
@@ -42,6 +42,16 @@ export interface DevHooks {
    * zapisuje je obok wyniku, żeby pomiar dało się porównać. Rozszerzenie F0 poza kontrakt.
    */
   renderOptions(): ResolvedRenderOptions;
+  /**
+   * Kadr od ostatniego resetFraming(): ile klatek obaj zawodnicy drużyny gracza byli
+   * w oknie w całości (harness/kadr.ts, pomiar 844 × 390). Rozszerzenie F0 poza kontrakt.
+   */
+  framing(): FramingStats;
+  resetFraming(): void;
+  /** Stopy zawodnika w px CSS okna – test sterowania „w prawo na ekranie” (harness/sterowanie.ts). */
+  screenPos(player: PlayerId): { x: number; y: number } | null;
+  /** Czy pętla stoi (nakładka „Obróć telefon” na telefonie w pionie). */
+  paused(): boolean;
 }
 
 declare global {

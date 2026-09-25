@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Set Wieszowa 3D – siatkówka 2 na 2 w 3D dla UKS Wieszowa (Wybieram Ruch)",
   "engines": {
-    "node": ">=22"
+    "node": "22.x"
   },
   "packageManager": "pnpm@10.23.0",
   "scripts": {
@@ -22,7 +22,9 @@
     "check": "pnpm check:granice && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
     "harness:perf": "tsx harness/perf.ts",
     "harness:przyjecie": "tsx harness/przyjecie.ts",
-    "harness:zrzuty": "tsx harness/zrzuty.ts"
+    "harness:zrzuty": "tsx harness/zrzuty.ts",
+    "harness:kadr": "tsx harness/kadr.ts",
+    "harness:sterowanie": "tsx harness/sterowanie.ts"
   },
   "dependencies": {
     "three": "^0.185.1"

@@ -50,10 +50,29 @@ export interface TouchInput {
 }
 
 export function isUiElement(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest(UI_SELECTOR) !== null;
+  // `typeof Element`: w teście w Node (tests/input/wzgledne.test.ts) DOM-u nie ma.
+  return (
+    typeof Element !== 'undefined' &&
+    target instanceof Element &&
+    target.closest(UI_SELECTOR) !== null
+  );
 }
 
-export function createTouchInput(target: HTMLElement, sink: InputSink): TouchInput {
+/** Tyle z `window`, ile dotyk potrzebuje – wstrzykiwane, żeby test w Node podał własne. */
+export type PointerWindow = Pick<Window, 'addEventListener' | 'removeEventListener'>;
+
+/**
+ * Sterowanie jest WZGLĘDNE (lekcja z gry 2D): palec postawiony GDZIEKOLWIEK ustala środek
+ * joysticka, a kierunek biegu daje przesunięcie od tego środka. Nic tu nie zna pozycji
+ * zawodnika na ekranie – komenda `move` to sam kierunek. Test regresji: palec w lewym
+ * górnym rogu i ruch w prawo = zawodnik biegnie w prawo, choć stoi na prawo od palca
+ * (tests/input/wzgledne.test.ts, harness/sterowanie.ts).
+ */
+export function createTouchInput(
+  target: HTMLElement,
+  sink: InputSink,
+  win: PointerWindow = window,
+): TouchInput {
   const pointers = new Map<number, TrackedPointer>();
 
   function startSwing(p: TrackedPointer, now: number): void {
@@ -202,9 +221,9 @@ export function createTouchInput(target: HTMLElement, sink: InputSink): TouchInp
   // na window – działa też wtedy, gdy setPointerCapture zawiedzie.
   const nonPassive: AddEventListenerOptions = { passive: false };
   target.addEventListener('pointerdown', onPointerDown);
-  window.addEventListener('pointermove', onPointerMove);
-  window.addEventListener('pointerup', onPointerUp);
-  window.addEventListener('pointercancel', onPointerCancel);
+  win.addEventListener('pointermove', onPointerMove);
+  win.addEventListener('pointerup', onPointerUp);
+  win.addEventListener('pointercancel', onPointerCancel);
   target.addEventListener('touchstart', blockBrowserGesture, nonPassive);
   target.addEventListener('touchmove', blockBrowserGesture, nonPassive);
   target.addEventListener('contextmenu', blockBrowserGesture);
@@ -224,9 +243,9 @@ export function createTouchInput(target: HTMLElement, sink: InputSink): TouchInp
     },
     dispose() {
       target.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('pointercancel', onPointerCancel);
+      win.removeEventListener('pointermove', onPointerMove);
+      win.removeEventListener('pointerup', onPointerUp);
+      win.removeEventListener('pointercancel', onPointerCancel);
       target.removeEventListener('touchstart', blockBrowserGesture);
       target.removeEventListener('touchmove', blockBrowserGesture);
       target.removeEventListener('contextmenu', blockBrowserGesture);

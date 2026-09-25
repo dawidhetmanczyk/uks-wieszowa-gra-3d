@@ -354,3 +354,128 @@
     animation: none;
   }
 }
+
+/* Nakładka „Obróć telefon” (src/ui/orientation.ts) ----------------------
+   Pełny ekran nad HUD-em: w pionie mecz stoi, więc nie ma czego pokazywać pod spodem. */
+
+.rotate-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: var(--navy);
+  color: var(--white);
+  font-family: var(--font-text);
+  /* Dotyk na nakładce nie jest gestem gry – i nie przewija strony. */
+  touch-action: none;
+}
+
+.rotate-gate[hidden] {
+  display: none;
+}
+
+.rotate-gate__card {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  max-width: 22rem;
+  text-align: center;
+}
+
+/* Znak klubu zawsze w swoich proporcjach (CLAUDE.md: nigdy zniekształcony). */
+.rotate-gate__mark {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+}
+
+.rotate-gate__icon {
+  width: 96px;
+  height: 96px;
+}
+
+.rotate-gate__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.rotate-gate__frame {
+  fill: none;
+  stroke: var(--blue-light);
+  stroke-width: 3;
+  /* Ramka telefonu obraca się wokół swojego środka – to ona jest instrukcją. */
+  transform-origin: 32px 27px;
+  animation: rotate-gate-turn 3s ease-in-out infinite;
+}
+
+.rotate-gate__arrow {
+  fill: none;
+  stroke: var(--amber);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.rotate-gate__arrowhead {
+  fill: var(--amber);
+}
+
+/* Jeden obrót na trzy sekundy z długim przystankiem w poziomie – 0,33 Hz, daleko od 3 Hz. */
+@keyframes rotate-gate-turn {
+  0%,
+  25% {
+    transform: rotate(0deg);
+  }
+  55%,
+  100% {
+    transform: rotate(-90deg);
+  }
+}
+
+.rotate-gate__title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 24px;
+  letter-spacing: 0.02em;
+}
+
+.rotate-gate__text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: rgb(255 255 255 / 0.78);
+}
+
+/* Furtka wygląda jak odnośnik, nie jak główna droga: obrót telefonu jest właściwym
+   wyjściem, a to jest wyjście dla dziecka z blokadą obrotu. Pole dotyku ≥ 44 px. */
+.rotate-gate__skip {
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--blue-light);
+  font: inherit;
+  font-size: 15px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rotate-gate__skip:focus-visible {
+  outline: 3px solid var(--blue-light);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rotate-gate__frame {
+    /* Ikona zostaje, ruch znika: telefon narysowany od razu w poziomie. */
+    animation: none;
+    transform: rotate(-90deg);
+  }
+}

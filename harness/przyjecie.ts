@@ -22,7 +22,12 @@
  * (najdłuższa klatka rAF w próbie > STALL_FRAME_MS), są liczone osobno jako niewiarygodne –
  * spóźniony tap nie jest wtedy winą sterowania.
  *
- * Użycie: pnpm harness:przyjecie [--url <adres>] [--headless] [--proby 50] [--seed 7] [--build]
+ * Chromium startuje bez limitu klatek (jak perf): z vsync pętla zależy od monitora, a po
+ * wygaszeniu ekranu (bezczynność) rysuje raz na sekundę. Bez limitu wejście trafia do sim
+ * w najbliższym ticku (≤ 8,3 ms) – na telefonie 60 Hz dochodzi do tego ≤ 16,7 ms klatki,
+ * czyli mniej niż trzecia część kosza histogramu. `--vsync` przywraca limit.
+ *
+ * Użycie: pnpm harness:przyjecie [--url <adres>] [--headless] [--vsync] [--proby 50] [--seed 7] [--build]
  */
 import type { Browser, Page } from 'playwright';
 import type {
@@ -41,7 +46,9 @@ import {
   fmt,
   launchBrowser,
   mean,
-  mobileSpec,
+  landscapeSpec,
+  passRotateGate,
+  phoneSpec,
   modeLabel,
   nextFloat,
   openPage,
@@ -58,9 +65,13 @@ const DEFAULT_ATTEMPTS = 50;
 const DEFAULT_SEED = 7;
 /** Seed seta = ATTEMPT_SEED_BASE + numer próby – ten sam serwis przy każdym uruchomieniu. */
 const ATTEMPT_SEED_BASE = 1000;
-/** Środek ekranu w dolnej połowie – tam, gdzie kciuk trzyma telefon w pionie. */
-const TAP_X = 195;
-const TAP_Y = 600;
+/**
+ * Miejsce tapu jako ułamek okna: środek w poziomie, w dolnej części – tam, gdzie leży kciuk,
+ * z dala od HUD-u (wynik i „Nowy set” są u góry). Sterowanie jest względne, więc dla gry
+ * miejsce nie ma znaczenia – liczy się tylko to, żeby nie trafić w przycisk.
+ */
+const TAP_FX = 0.5;
+const TAP_FY = 0.72;
 /** Rozrzut tapu wokół wejścia w zasięg: [−TAP_SPREAD_MS, +TAP_SPREAD_MS). */
 const TAP_SPREAD_MS = 250;
 const RESET_TIMEOUT_MS = 2000;
@@ -138,7 +149,10 @@ async function main(): Promise<void> {
   const args = parseArgs();
   const attemptsCount = args.proby ?? DEFAULT_ATTEMPTS;
   const harnessSeed = args.seed ?? DEFAULT_SEED;
-  const spec = mobileSpec(2);
+  // Telefon w poziomie – tak się gra (nakładka „Obróć telefon” w pionie); --ekran zmienia.
+  const spec = phoneSpec(args, landscapeSpec(2));
+  const TAP_X = Math.round(spec.width * TAP_FX);
+  const TAP_Y = Math.round(spec.height * TAP_FY);
 
   // Wszystkie opóźnienia losujemy przed startem: rozkład w oknie jest wtedy
   // niezależny od tego, ile prób padło na „brak serwisu”.
@@ -151,12 +165,13 @@ async function main(): Promise<void> {
   // podglądu – inaczej vite preview zostawał żywy i skrypt wisiał.
   let browser: Browser | null = null;
   try {
-    browser = await launchBrowser(args.headless);
+    browser = await launchBrowser(args.headless, { uncappedFrameRate: !args.vsync });
     const { page, errors } = await openPage(browser, spec);
     const url = withQuery(server.url, {});
     console.log(`Otwieram ${url} – ${specLabel(spec)}, tryb ${modeLabel(args.headless)}`);
     await page.goto(url);
     const version = await waitForHooks(page);
+    await passRotateGate(page);
 
     const attempts: Attempt[] = [];
     let resetWarned = false;

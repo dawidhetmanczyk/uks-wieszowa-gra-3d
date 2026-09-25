@@ -1,18 +1,18 @@
 # Raport F0 – szkielet i prototyp uczucia
 
-Gałąź: `f0/prototyp` (nie zmergowana). Data: 2026-09-05. Autor: Claude Code, brama: Dawid.
+Gałąź: `f0/prototyp` (nie zmergowana). Data: 2026-09-05, poprawki przed bramą 2026-09-25 (§8). Autor: Claude Code, brama: Dawid.
 
 ## 1. Co jest do sprawdzenia na bramie
 
 Prototyp sterowania i kamery w 2 na 2: cztery kapsuły, piłka, siatka, boisko 9 × 18, pełne zasady (3 odbicia, podwójne odbicie, aut wg cienia, set do 7 / przewaga 2 / limit 10), AI Nowicjusz dla partnera i rywali, HUD, przycisk „Nowy set”. Wszystko jako kapsuły i prostokąty, bez modeli, hali, efektów, dźwięku, menu, poziomów, PWA (zgodnie z zakresem F0 w docs/21).
 
-Uruchomienie na telefonie w tej samej sieci Wi-Fi:
+Uruchomienie na telefonie: podgląd gałęzi `f0/prototyp` na Vercelu (projekt `uks-wieszowa-gra-3d`, kroki w §8.1) – bez sieci lokalnej i bez `pnpm dev --host`. Gra jest pozioma: w pionie pokaże się prośba o obrót z furtką „Graj mimo to”. Parametry: `?ai=1` (AI vs AI), `?serwis=1` (serwują czerwoni), `?seed=123`, `?fps=1`, `?jakosc=niska`.
+
+Awaryjnie, w tej samej sieci Wi-Fi:
 
 ```bash
 pnpm install && pnpm dev
 ```
-
-Vite wypisze adres `http://<ip-komputera>:5173` – otwórz go na telefonie w pionie. Parametry: `?ai=1` (AI vs AI), `?serwis=1` (serwują czerwoni), `?seed=123`, `?fps=1`.
 
 Pytania z bramy (docs/21): trafiam w piłkę bez frustracji? wiem, gdzie spadnie? przełączanie zawodnika jest zrozumiałe? wystawa do partnera działa intuicyjnie?
 
@@ -124,7 +124,7 @@ To najważniejsza część raportu (docs/21 „Zasady dla każdej fazy”). Peł
 2. **Rozróżnienie gestów po 120 ms / 12 px**: ruch palca to joystick, bezruch to zamach, puszczenie przed 120 ms to tap. Drugi palec podczas biegu = zamach. „Kierunek przeciągnięcia trzymanego w chwili dotknięcia” zinterpretowane jako przesunięcie palca w trakcie trzymania zamachu (celowanie), nie kierunek biegu.
 3. **Przełączanie aktywnego tylko przed pierwszym odbiciem po naszej stronie** (serwis i atak rywali) + ratunek, gdy aktywny nie zdąży. Literalna reguła „bliżej lądowania” odbierałaby graczowi atak: po przyjęciu piłka leci do partnera-rozgrywającego i sterowanie skakałoby na niego.
 4. **Oś x**: prawo ekranu = −x świata (układ prawoskrętny Three.js, kamera patrzy w +z). Mapowanie w `aim.ts` i `gesty.ts`; render nic nie odbija (odbicie zepsułoby w F3 tekst na banerach i znak na koszulkach). Gracz stoi po prawej, partner po lewej.
-5. **Punkt lądowania vs punkt przyjęcia.** Przy płaskim torze piłka na wysokości bioder jest 1–3 m przed punktem lądowania; kto stanie na pierścieniu, dostaje piłkę przy kolanach na ~40 ms. Sim liczy oba punkty; pierścień pokazuje lądowanie (jak w koncepcji), AI i harness dobiegają do punktu przyjęcia. **Pytanie na bramę:** czy pierścień ma pokazywać, gdzie piłka spadnie, czy gdzie stanąć.
+5. **Punkt lądowania vs punkt przyjęcia.** Przy płaskim torze piłka na wysokości bioder jest 1–3 m przed punktem lądowania; kto stanie na pierścieniu, dostaje piłkę przy kolanach na ~40 ms. Sim liczy oba punkty; AI i harness dobiegają do punktu przyjęcia. **Rozstrzygnięte 2026-09-25 (Dawid):** pierścień pokazuje miejsce, gdzie stanąć; punkt lądowania widać z cienia piłki (§8).
 6. **Serwis lob/strzał z siły**: siła < 0,5 = wysoki łuk (jak serwis dzieci; piłka opada stromo, pierścień = miejsce przyjęcia), siła ≥ 0,5 = płaski strzał 10,5–16 m/s. Bez tego serwis Nowicjusza był zawsze płaski. Serwis gracza bez paska timingu (jakość 1) – pasek to F1.
 7. **Auto-skok z gałęzią predykcyjną** (skok wtedy, gdy w apogeum piłka będzie w zasięgu) – literalna reguła „piłka wyżej niż zasięg → skok” dawała kontakt na 2,6 m i atak zawsze lobem, niezależnie od siły.
 8. **Bierny kontakt z kapsułą liczy się jako odbicie** ze wszystkimi zasadami (podwójne odbicie!). Po własnym uderzeniu 0,3 s immunitetu.
@@ -172,7 +172,7 @@ Po przeglądzie: 129 testów w 14 plikach (było 83 w 11), wszystkie zielone; sk
 
 ## 7. Znane ograniczenia i propozycje na F0b / F1
 
-- **Portret: partner często poza kadrem.** Przy FOV 72° pole widzenia na wysokości naszych zawodników (9 m od kamery) ma ~6 m szerokości, a para stoi 4,5 m od siebie; kamera śledzi 0,6·gracz + 0,4·piłka (docs/20 §4.1), więc przy przyjęciu partner-rozgrywający jest za krawędzią (na f0-390x844-wymiana.png widać tylko jego cień). Wystawa do partnera to tap bez celu, więc gra jest możliwa, ale kciuk nie widzi, gdzie leci piłka. Opcje na F0b: FOV 80° w portrecie, kamera 2 m dalej za linią (z = −17) albo śledzenie środka pary z piłką. W poziomie (1280 × 720) cała para i większość boiska są w kadrze.
+- ~~**Portret: partner często poza kadrem.**~~ Rozwiązane 2026-09-25 (§8): gra jest pozioma, nowa kamera trzyma obu w kadrze w 100 % klatek w obu orientacjach. Opis z 2026-09-05: przy FOV 72° pole widzenia na wysokości naszych zawodników (9 m od kamery) ma ~6 m szerokości, a para stoi 4,5 m od siebie; kamera śledzi 0,6·gracz + 0,4·piłka (docs/20 §4.1), więc przy przyjęciu partner-rozgrywający jest za krawędzią (na f0-390x844-wymiana.png widać tylko jego cień). Wystawa do partnera to tap bez celu, więc gra jest możliwa, ale kciuk nie widzi, gdzie leci piłka. Opcje na F0b: FOV 80° w portrecie, kamera 2 m dalej za linią (z = −17) albo śledzenie środka pary z piłką. W poziomie (1280 × 720) cała para i większość boiska są w kadrze.
 - Pomiar fps na prawdziwym Androidzie klasy średniej – nie wykonany (brak urządzenia w harnessie).
 - Zawodnik AI „tańczy” pod piłką: co 0,25 s nowy odczyt z błędem ±0,6 m zmienia cel. Zgodne ze spec, ale nerwowe na ekranie – do strojenia w F1 (malejący błąd przy zbliżaniu piłki).
 - AI zamachuje się na górnej granicy zasięgu, więc przyjęcia mają jakość ~0,3 i duży szum – działa (rozgrywający dobiega), ale w F1 warto opóźnić zamach do pasma wysokości.
@@ -181,10 +181,124 @@ Po przeglądzie: 129 testów w 14 plikach (było 83 w 11), wszystkie zielone; sk
 - Celownik na dalekiej połowie w portrecie ma ~23 px – czytelny, ale mały; w F1 skalować znaczniki z odległością.
 - Piłka ma dwa cienie: płaskie koło (pomoc dla gracza) i cień z mapy – jeśli myli, wyłączyć `castShadow` piłki.
 
-## 8. Jak powtórzyć pomiary
+## 8. Poprawki przed bramą (2026-09-25)
+
+Brama nie odbyła się, bo test wymagał `pnpm dev --host` w sieci lokalnej. Zmiany: podgląd na Vercelu, gra w poziomie z nakładką „Obróć telefon”, kamera dobrana pod poziom, test regresji sterowania względnego, pierścień „tu stań”.
+
+### 8.1 Vercel – co kliknąć
+
+Repo jest przygotowane (`vercel.json`: build `pnpm check && pnpm build`, katalog `dist`, `/assets/*` z `Cache-Control: public, max-age=31536000, immutable`, reszta – w tym `index.html` – `no-cache`, nieznane ścieżki → `index.html`). Nic nie wdrażałem. Kroki:
+
+1. vercel.com → zespół **dawidhetmanczyk's projects** → **Add New… → Project**.
+2. **Import Git Repository** → GitHub → `dawidhetmanczyk/uks-wieszowa-gra-3d` → **Import**. Jeśli repo nie ma na liście: **Adjust GitHub App Permissions** i dodaj je.
+3. **Project Name**: `uks-wieszowa-gra-3d`. **Framework Preset**: Vite (wykryje sam). **Root Directory**: `./`. **Build and Output Settings** zostaw – `vercel.json` je nadpisuje.
+4. **Environment Variables**: dodaj `ENABLE_EXPERIMENTAL_COREPACK` = `1` (wszystkie środowiska). Wtedy Vercel użyje pnpm 10.23.0 z pola `packageManager`, tego samego co lokalnie; Node bierze z `engines.node` = `22.x`.
+5. **Deploy**. To pierwsze wdrożenie buduje `main`, a tam jest tylko koncepcja – **może się nie udać i to jest w porządku** (produkcja = `main`, a `main` czeka na bramę). Projekt i tak powstaje.
+6. Podgląd gałęzi: gałąź `f0/prototyp` była wypchnięta przed założeniem projektu, więc Vercel zbuduje ją przy najbliższym pushu. Napisz mi, a wypchnę pusty commit, albo sam:
+
+```bash
+git commit --allow-empty -m "Podgląd Vercel dla f0/prototyp" && git push
+```
+
+7. **Settings → Deployment Protection → Vercel Authentication**: domyślnie podglądy wymagają zalogowania do Vercela. Albo zaloguj się na telefonie tym samym kontem, albo wyłącz ochronę dla tego projektu.
+8. Stały adres podglądu gałęzi: **https://uks-wieszowa-gra-3d-git-f0-prototyp-dawidhetmanczyks-projects.vercel.app** (widoczny też w Deployments → wdrożenie `f0/prototyp` → Domains). Otwórz na telefonie, obróć poziomo, graj.
+
+### 8.2 Obaj zawodnicy drużyny gracza w kadrze – przed i po
+
+Pomiar w przeglądarce (`pnpm harness:kadr`): 60 s AI vs AI, seed 7, licznik liczony przez render co klatkę tą samą kamerą, którą widzi gracz. „Cały w kadrze” = stopy i czubek głowy kapsuły, z promieniem po obu bokach, w oknie.
+
+| Ekran | Kamera | Obaj cali w kadrze | Najmniejszy zapas do krawędzi | Zawodnik na ekranie | Piłka w kadrze |
+|---|---|---|---|---|---|
+| 844 × 390 | przed (F0) | 100 % (8794/8794 klatek) | 12,0 px | 80,0 px | 98,6 % |
+| 844 × 390 | **po** | **100 % (8828/8828)** | **68,7 px** | 80,0 px | 99,0 % |
+| 390 × 844 (za furtką) | przed (F0) | 29,0 % (2548/8779) | −270,7 px (partner poza oknem) | 106,1 px | 97,9 % |
+| 390 × 844 (za furtką) | **po** | **100 % (8867/8867)** | 26,9 px | 63,5 px | 100 % |
+
+W poziomie stara kamera w meczu AI vs AI już trzymała obu w kadrze, ale na styk. Scenariusz obciążeniowy (człowiek biega aktywnym od linii do linii, partner-AI gra swoje; licznik w Node na tym samym kodzie kamery) pokazał, że F0 gubi partnera w 28 % klatek – przy dziecku biegającym pod linię boczną. Kamerę dobrałem przeszukaniem ok. 5000 wariantów (FOV, odległość, wysokość, punkt patrzenia, wagi celu): warunek „obaj cali w kadrze w 100 % klatek w obu scenariuszach, piłka ≥ 97 %”, z wariantów spełniających – największy zapas do krawędzi. Wynik: FOV poziome 63,6° (32° pionowo przy 844 × 390), kamera 11,5 m za linią zamiast 6 m, wysokość 3,2 m i punkt patrzenia bez zmian, cel kamery 0,35 aktywny + 0,25 partner + 0,4 piłka. Zawodnik ma ten sam rozmiar co w F0 (80 px), rywale są o ~23 % więksi (kamera dalej = mniejsza różnica skali bliski–daleki). Wariant z większym zawodnikiem (~95 px) odpadł, bo w scenariuszu skrajnym gubił partnera w ~30 % klatek. Test regresji w Vitest (`tests/render/kadr.test.ts`) pilnuje obu scenariuszy i sprawdza, że stara kamera go oblewa.
+
+### 8.3 Sterowanie względne – test regresji
+
+Sterowanie było i jest względne (joystick od punktu dotknięcia, input nie zna pozycji zawodnika). Test jak w 2D, w dwóch miejscach:
+
+| Test | Przypadek | Wynik |
+|---|---|---|
+| `pnpm harness:sterowanie` (Chromium, 844 × 390, dotyki CDP) | palec w lewym górnym rogu (24, 30), zawodnik na prawo od palca, ruch palca w prawo | **PASS** – zawodnik x 508,5 → 549,8 px (+41,3 px w prawo), po puszczeniu stop |
+| jw. | palec w prawym dolnym rogu (820, 366), zawodnik na lewo od palca, ruch w lewo | **PASS** – x 497,4 → 467,0 px (−30,4 px), po puszczeniu stop |
+| `tests/input/wzgledne.test.ts` (Node: prawdziwy `touch.ts` → sim → kamera) | ta sama komenda z 5 miejsc startu palca (4 rogi i środek); lewy górny róg + ruch w prawo = zawodnik w prawo na ekranie | PASS |
+
+### 8.4 Pierścień
+
+Pierścień pokazuje teraz miejsce, gdzie stanąć (`landing.intercept` – punkt, w którym opadająca piłka przecina 1,1 m), a nie punkt lądowania. Punkt lądowania pokazuje cień piłki: płaskie koło sunie pod piłką i kończy dokładnie w miejscu upadku.
+
+### 8.5 Wydajność po zmianach (`pnpm harness:perf`, 60 s AI vs AI, CPU ×4, Chromium headed bez limitu klatek, RTX 4060)
+
+| Ekran | Czas klatki p50 / p95 / p99 | fps p95 | Draw calls | Trójkąty | Próg |
+|---|---|---|---|---|---|
+| 390 × 844 @3× (ekran budżetu, za furtką) | 1,40 / 2,90 / 4,20 ms | 345 | 19 | 2 352 | PASS (≥ 55, ≤ 60, ≤ 120 000) |
+| 844 × 390 @3× (tak się gra) | 1,70 / 4,80 / 6,10 ms | 208 | 18 | 2 288 | PASS |
+
+W poziomie klatka jest droższa niż w pionie (p95 4,8 vs 2,9 ms przy tej samej liczbie pikseli kanwy 1688 × 780): w kadrze jest więcej podłogi z mapą cieni i więcej sceny. Przed zmianami (F0, pion 390 × 844): p95 2,4 ms, 18 draw calls, 2 288 trójkątów – dziś w pionie 19 draw calls – o jeden więcej, najpewniej dlatego, że dalsza kamera ma w kadrze obiekt, który wcześniej odcinał frustum culling (nie sprawdzałem, który).
+
+Bundle JS 148,5 kB gzip (budżet 350 kB), znak klubu 7,2 kB jako osobny plik w `/assets`, assety glTF 0 B. `pnpm check` zielony: 142 testy w 17 plikach (było 129 w 14 – doszły `tests/render/kadr.test.ts`, `tests/input/wzgledne.test.ts`, `tests/ui/orientacja.test.ts`), skan granic 39 plików, typy, lint, format. Tak jak wcześniej: to zapas CPU i GPU klasy desktop, nie pomiar Androida – ten zrób na telefonie z `?ai=1&fps=1`, a w razie spadków z `?jakosc=niska`.
+
+### 8.6 Przyjęcie serwisu po zmianach (`pnpm harness:przyjecie`, 50 prób, 844 × 390)
+
+| Miara | F0 (2026-09-05, 390 × 844) | Po zmianach (844 × 390) |
+|---|---|---|
+| Sukcesy | 25 / 50 (50 %) | **24 / 50 (48 %)**, 0 prób niewiarygodnych (najdłuższa klatka 35,5 ms) |
+| Tapy w oknie od −125 do +100 ms | 25 / 25 | 24 / 24 |
+| Średnia jakość udanych | 0,52 | 0,50 |
+| Średnie opóźnienie kontaktu | +12 ms | +9 ms |
+| Porażki | 15 passive, 10 whiff | 15 passive, 11 whiff |
+
+| Kosz | Prób | Udanych |
+|---|---|---|
+| [−250, −200) ms | 5 | 0 |
+| [−200, −150) ms | 5 | 0 |
+| [−150, −100) ms | 5 | 4 |
+| [−100, −50) ms | 4 | 4 |
+| [−50, 0) ms | 6 | 6 |
+| [0, 50) ms | 5 | 5 |
+| [50, 100) ms | 5 | 5 |
+| ≥ 100 ms | 0 (piłka wcześniej trafiła w ciało) | – |
+
+Wynik jest ten sam co w F0 w granicach rozrzutu – i powinien być: zmiany dotyczą kamery, nakładki i pierścienia, a przyjęcie zależy od sim i chwili tapu. Jedyna porażka w koszu [−150, −100) to tap 133 ms przed wejściem piłki w zasięg: łaska tapu trwa 120 ms, więc okno wygasło przed dolotem. To dokładniejsza granica niż „od −150 ms” z §3.2 – w F0 żaden wylosowany tap nie padł między −150 a −125 ms. **Skuteczne okno tapu: od ok. −125 do +100 ms, czyli ok. 225 ms.** Jakość rośnie z opóźnieniem jak wcześniej: ~0,41 przy −100 ms, ~0,77 przy +70 ms.
+
+Uwaga o pomiarze: dwa pierwsze przebiegi po zmianach były bezużyteczne (16 i 39 prób z klatkami po 1011 ms). Przyczyna: Windows wygasza monitor po 15 minutach bezczynności, a Chromium z vsync rysuje wtedy raz na sekundę. Harness przyjęcia i zrzutów startuje teraz przeglądarkę bez limitu klatek, jak perf (`--vsync` przywraca limit). Wejście trafia wtedy do sim w najbliższym ticku (≤ 8,3 ms); na telefonie 60 Hz dochodzi do tego do 16,7 ms klatki – mniej niż trzecia część kosza.
+
+### 8.7 Zrzuty (docs/zrzuty/)
+
+| Plik | Scena |
+|---|---|
+| f0-844x390-serwis.png / -wymiana.png / -punkt.png | telefon w poziomie – tak się gra |
+| f0-390x844-obrot.png | nakładka „Obróć telefon” (mecz stoi – harness sprawdza, że tick sim nie rośnie przez 1 s) |
+| f0-390x844-serwis.png / -wymiana.png / -punkt.png | pion za furtką „Graj mimo to” |
+| f0-1280x720-serwis.png / -wymiana.png / -punkt.png | monitor |
+
+### 8.8 Co przyjąłem sam (pełna lista: docs/22 §9 pkt 26–30)
+
+1. **Furtka pamiętana w sesji karty**, nie na zawsze. W 2D wybór idzie do profilu, ale w F0 nie ma profilu ani ustawień, w których dałoby się go cofnąć – jedno kliknięcie zablokowałoby test nakładki na tym telefonie. Profil przyjdzie w F4.
+2. **Blokada poziomu z pierwszego dotyku**: przeglądarka pozwala na pełny ekran i `orientation.lock` tylko z gestu, a w F0 nie ma przycisku „Graj”. Na Androidzie pierwszy dotyk w grze wchodzi więc w pełny ekran. Do sprawdzenia na bramie, czy ten pierwszy gest (np. serwis) nie przepada przy zmianie rozmiaru okna. iOS nie zna `lock` – tam zostaje sama prośba o obrót.
+3. **Kamera dalej niż w docs/20** (11,5 m zamiast ~6 m za linią) i cel kamery z partnerem – uzasadnienie liczbami w §8.2.
+4. **Znak klubu z gry 2D**: `src/ui/club-mark.webp` z wpisem w docs/ASSETY.md (źródło, SHA-256). To znak własny klubu, nie CC0 – **potwierdź, proszę, że można go tak używać**.
+5. **Harness na porcie 4317** z kontrolą zajętości – na tej maszynie równolegle działają serwery Vite gry 2D i strony; harness zabija tylko procesy, które sam uruchomił.
+
+## 9. Jak powtórzyć pomiary
+
+```bash
+pnpm harness:kadr
+```
+
+```bash
+pnpm harness:sterowanie
+```
 
 ```bash
 pnpm harness:perf --sekundy 60
+```
+
+```bash
+pnpm harness:perf --ekran 844x390
 ```
 
 ```bash

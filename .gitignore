@@ -24,3 +24,6 @@ Thumbs.db
 
 # logi
 *.log
+
+# lokalne ustawienia Claude Code (launch.json, uprawnienia) – nie należą do repo
+.claude/

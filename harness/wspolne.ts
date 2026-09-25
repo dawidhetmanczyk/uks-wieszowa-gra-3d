@@ -109,6 +109,35 @@ export interface DevHooks {
    * porównać między uruchomieniami z różnymi ustawieniami. Przyjmujemy funkcję albo obiekt.
    */
   renderOptions?: Record<string, unknown> | (() => Record<string, unknown>);
+  /** Statystyka kadru od ostatniego resetFraming() – patrz FramingStats. */
+  framing(): FramingStats;
+  resetFraming(): void;
+  /** Stopy zawodnika w pikselach CSS okna (ostatnia klatka) albo null przed pierwszą klatką. */
+  screenPos(player: PlayerId): { x: number; y: number } | null;
+  /** Czy pętla stoi (nakładka „Obróć telefon”). */
+  paused(): boolean;
+}
+
+/**
+ * Kadr zliczany przez render co klatkę (docs/22 §7): czy zawodnicy mieszczą się w oknie.
+ * „Cały” = stopy i głowa kapsuły z promieniem po obu bokach wewnątrz okna.
+ */
+export interface FramingStats {
+  frames: number;
+  /** Klatki, w których OBAJ zawodnicy drużyny gracza (0 i 1) są w kadrze w całości. */
+  team0Full: number;
+  /** Klatki, w których obaj są w kadrze choć częściowo. */
+  team0Partial: number;
+  /** Klatki „cały w kadrze” per zawodnik 0..3. */
+  playerFull: [number, number, number, number];
+  /** Klatki z piłką w kadrze. */
+  ballIn: number;
+  /** Najmniejszy zapas (px CSS) skrajnego punktu kapsuł 0 i 1 do krawędzi okna; < 0 = wyszedł. */
+  minMarginPx: number;
+  /** Wysokość kapsuły gracza w px CSS – średnia z klatek (miara „jak duży jest zawodnik”). */
+  meanPlayerHeightPx: number;
+  width: number;
+  height: number;
 }
 
 declare global {
@@ -131,17 +160,21 @@ export interface HarnessArgs {
   /** Wymuś `pnpm build` nawet gdy dist/ istnieje. */
   build: boolean;
   /**
-   * Zostaw limit klatek przeglądarki (vsync). Domyślnie perf go zdejmuje, bo delta rAF
-   * przycięta do okresu odświeżania ekranu mierzy monitor, nie koszt klatki.
+   * Zostaw limit klatek przeglądarki (vsync). Domyślnie perf, przyjęcie i zrzuty go zdejmują:
+   * perf, bo delta rAF przycięta do okresu odświeżania ekranu mierzy monitor, nie koszt klatki;
+   * przyjęcie i zrzuty, bo przy wygaszonym monitorze (Windows po bezczynności) Chromium z vsync
+   * rysuje raz na sekundę i pomiar traci sens.
    */
   vsync: boolean;
   sekundy: number | null;
   proby: number | null;
   seed: number | null;
+  /** Rozmiar okna „SZERxWYS” (np. 844x390) – nadpisuje domyślny ekran skryptu. */
+  ekran: { width: number; height: number } | null;
 }
 
 const FLAGS = new Set(['headless', 'build', 'vsync']);
-const VALUES = new Set(['url', 'sekundy', 'proby', 'seed']);
+const VALUES = new Set(['url', 'sekundy', 'proby', 'seed', 'ekran']);
 
 export function parseArgs(argv: readonly string[] = process.argv.slice(2)): HarnessArgs {
   const args: HarnessArgs = {
@@ -152,6 +185,7 @@ export function parseArgs(argv: readonly string[] = process.argv.slice(2)): Harn
     sekundy: null,
     proby: null,
     seed: null,
+    ekran: null,
   };
   const raw = new Map<string, string | true>();
   for (let i = 0; i < argv.length; i++) {
@@ -190,6 +224,12 @@ export function parseArgs(argv: readonly string[] = process.argv.slice(2)): Harn
   args.sekundy = num('sekundy');
   args.proby = num('proby');
   args.seed = num('seed');
+  const ekran = raw.get('ekran');
+  if (typeof ekran === 'string') {
+    const m = /^(\d{3,4})x(\d{3,4})$/.exec(ekran.trim());
+    if (!m) throw new Error(`--ekran ma postać SZERxWYS, np. 844x390; dostałem „${ekran}”`);
+    args.ekran = { width: Number(m[1]), height: Number(m[2]) };
+  }
   return args;
 }
 
@@ -203,9 +243,26 @@ export function modeLabel(headless: boolean): string {
 /** Katalog repo – harness leży w <repo>/harness/. */
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-const PREVIEW_PORT = 4173;
+/**
+ * Własny port harnessu, nie domyślny 4173 Vite: na tej samej maszynie równolegle
+ * pracują repo gry 2D i strony, oba na Vite. Na wspólnym porcie `--strictPort`
+ * odmówiłby startu, a pętla oczekiwania dostałaby odpowiedź OBCEGO serwera i harness
+ * zmierzyłby cudzą grę. Dodatkowo port jest sprawdzany przed startem – patrz ensureServer.
+ */
+const PREVIEW_PORT = 4317;
 const PREVIEW_URL = `http://localhost:${PREVIEW_PORT}/`;
 const SERVER_START_TIMEOUT_MS = 30_000;
+const PORT_PROBE_TIMEOUT_MS = 1500;
+
+/** Czy coś już odpowiada pod adresem – wtedy to nie nasz serwer. */
+async function somethingListens(url: string): Promise<boolean> {
+  try {
+    await fetch(url, { signal: AbortSignal.timeout(PORT_PROBE_TIMEOUT_MS) });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export interface ServerHandle {
   url: string;
@@ -233,6 +290,15 @@ export async function ensureServer(args: HarnessArgs): Promise<ServerHandle> {
     }
   }
 
+  if (await somethingListens(PREVIEW_URL)) {
+    // Nie podpinamy się i niczego nie zabijamy: proces na tym porcie może należeć do innej
+    // sesji na tej maszynie. Harness zabija wyłącznie drzewo procesów, które sam uruchomił.
+    throw new Error(
+      `Port ${PREVIEW_PORT} jest już zajęty przez inny serwer – nie mierzę cudzej strony. ` +
+        `Zwolnij port albo podaj --url <adres naszego podglądu>.`,
+    );
+  }
+
   const child = spawn(`pnpm exec vite preview --port ${PREVIEW_PORT} --strictPort`, {
     cwd: ROOT,
     shell: true,
@@ -249,7 +315,7 @@ export async function ensureServer(args: HarnessArgs): Promise<ServerHandle> {
   });
 
   // Ctrl+C w trakcie pomiaru: bez tego node kończy się, a cmd → pnpm → vite zostają
-  // i trzymają port 4173 do następnego uruchomienia. Kod 130 = przerwane sygnałem.
+  // i trzymają port do następnego uruchomienia. Kod 130 = przerwane sygnałem.
   const onSigint = (): void => {
     killTree(child);
     process.exit(130);
@@ -268,8 +334,8 @@ export async function ensureServer(args: HarnessArgs): Promise<ServerHandle> {
   const deadline = Date.now() + SERVER_START_TIMEOUT_MS;
   while (Date.now() < deadline) {
     if (exited) {
-      // Najczęściej: port 4173 zajęty (--strictPort). Nie podpinamy się pod obcy
-      // serwer, bo mógłby serwować stary build – lepiej wyraźnie odmówić.
+      // Najczęściej: port zajęty (--strictPort) między sprawdzeniem a startem. Nie
+      // podpinamy się pod obcy serwer, bo mógłby serwować co innego – lepiej odmówić.
       throw new Error(
         `vite preview zakończył się (kod ${String(exitCode)}) przed startem:\n${output.join('')}` +
           `\nJeśli port ${PREVIEW_PORT} jest zajęty, podaj --url <adres> albo zwolnij port.`,
@@ -314,8 +380,39 @@ export interface ContextSpec {
   hasTouch: boolean;
 }
 
+/** Telefon w pionie, 390 × 844 – ekran budżetu z CLAUDE.md. */
 export function mobileSpec(deviceScaleFactor: number): ContextSpec {
   return { width: 390, height: 844, deviceScaleFactor, isMobile: true, hasTouch: true };
+}
+
+/** Ten sam telefon w poziomie, 844 × 390 – orientacja, w której gra się naprawdę. */
+export function landscapeSpec(deviceScaleFactor: number): ContextSpec {
+  return { width: 844, height: 390, deviceScaleFactor, isMobile: true, hasTouch: true };
+}
+
+/** Telefon o rozmiarze z --ekran (SZERxWYS) albo domyślny skryptu. */
+export function phoneSpec(
+  args: HarnessArgs,
+  fallback: ContextSpec,
+  deviceScaleFactor = fallback.deviceScaleFactor,
+): ContextSpec {
+  if (!args.ekran) return fallback;
+  return { ...args.ekran, deviceScaleFactor, isMobile: true, hasTouch: true };
+}
+
+/**
+ * Nakładka „Obróć telefon” zatrzymuje grę na telefonie w pionie. Pomiar w pionie
+ * przechodzi przez furtkę „Graj mimo to” – tę samą, którą ma dziecko z blokadą obrotu.
+ * Zwraca, czy nakładka była widoczna.
+ */
+export async function passRotateGate(page: Page): Promise<boolean> {
+  const button = page.getByRole('button', { name: 'Graj mimo to' });
+  if (!(await button.isVisible())) return false;
+  await button.click();
+  await page.waitForFunction(() => window.__sw3d?.paused() === false, undefined, {
+    timeout: 5000,
+  });
+  return true;
 }
 
 export const DESKTOP_SPEC: ContextSpec = {
@@ -330,6 +427,8 @@ export interface LaunchOptions {
   /**
    * Zdejmij limit klatek: rAF przestaje czekać na odświeżenie ekranu, więc delta rAF
    * to koszt klatki, a nie okres monitora (na 175 Hz to 5,7 ms niezależnie od gry).
+   * Przy okazji uniezależnia pętlę od stanu monitora: 2026-09-25 przy wygaszonym ekranie
+   * Chromium z vsync dawał klatki po 1011 ms (39 z 50 prób przyjęcia do wyrzucenia).
    */
   uncappedFrameRate?: boolean;
 }

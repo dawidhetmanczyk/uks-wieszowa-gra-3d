@@ -13,8 +13,8 @@ export const COLOR_LINE = '#FFFFFF';
 export const COLOR_NET = '#FFFFFF';
 export const COLOR_BALL = '#F79300';
 export const COLOR_BALL_SHADOW = '#000000';
-/** Bursztyn wolno używać tylko na granacie – pierścień lądowania leży na podłodze, więc pasuje. */
-export const COLOR_LANDING = '#FBB014';
+/** Bursztyn wolno używać tylko na granacie – pierścień „tu stań” leży na podłodze, więc pasuje. */
+export const COLOR_STAND = '#FBB014';
 export const COLOR_ACTIVE = '#FFFFFF';
 export const COLOR_AIM = '#109CE4';
 export const COLOR_SKY_LIGHT = '#DFF1FF';
