@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="theme-color" content="#0A2540" />
+    <!-- Bez ikony w F0 (znak klubu dojdzie w F4); pusty data-URL zamyka 404 na /favicon.ico. -->
+    <link rel="icon" href="data:," />
+    <title>Set Wieszowa 3D – prototyp F0</title>
+    <meta
+      name="description"
+      content="Siatkówka 2 na 2 w 3D dla UKS Wieszowa. Prototyp sterowania i kamery (faza F0)."
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0a2540;
+        /* Biały tekst już tu, nie dopiero w style.css – bez JS komunikat <noscript>
+           byłby czarny na granacie (kontrast 1,35:1). */
+        color: #ffffff;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        overflow: hidden;
+        touch-action: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      noscript p {
+        margin: 0;
+        padding: 24px;
+        text-align: center;
+        font-size: 16px;
+        line-height: 1.45;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="game" aria-label="Set Wieszowa 3D">
+      <canvas id="scene" tabindex="0" aria-label="Boisko do siatkówki 2 na 2"></canvas>
+    </main>
+    <noscript><p>Gra potrzebuje włączonego JavaScriptu.</p></noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

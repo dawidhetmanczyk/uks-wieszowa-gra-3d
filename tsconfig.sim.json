@@ -1,0 +1,27 @@
+{
+  "//": "Granica architektoniczna z CLAUDE.md egzekwowana przez kompilator: src/sim i src/ai",
+  "//lib": "kompilują się bez 'DOM' w lib, więc window, document, performance i requestAnimationFrame",
+  "//lib2": "nie istnieją dla tych plików. Skan importów robi dodatkowo scripts/check-granice.mjs.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src/sim/**/*.ts", "src/ai/**/*.ts"]
+}

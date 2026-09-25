@@ -1,0 +1,11 @@
+dist/
+node_modules/
+pnpm-lock.yaml
+docs/zrzuty/
+harness/wyniki/
+# Dokumenty (CLAUDE.md, docs/, README) pisze Dawid – prettier ich nie przestawia.
+*.md
+# vercel.json: na Vercelu `vercel build` zmienia formatowanie pliku w katalogu buildu przed
+# poleceniem buildu (2026-09-25: w gicie czysty, na Vercelu „[warn] vercel.json” i build pada).
+# Poprawność treści pilnuje tests/narzedzia/vercel.test.ts – walidacja kodem Vercela.
+vercel.json

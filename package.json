@@ -1,0 +1,49 @@
+{
+  "name": "set-wieszowa-3d",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Set Wieszowa 3D – siatkówka 2 na 2 w 3D dla UKS Wieszowa (Wybieram Ruch)",
+  "engines": {
+    "node": "22.x"
+  },
+  "packageManager": "pnpm@10.23.0",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.sim.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:granice": "node scripts/check-granice.mjs",
+    "check": "pnpm check:granice && pnpm typecheck && pnpm lint && pnpm format:check && pnpm test",
+    "harness:perf": "tsx harness/perf.ts",
+    "harness:przyjecie": "tsx harness/przyjecie.ts",
+    "harness:zrzuty": "tsx harness/zrzuty.ts",
+    "harness:kadr": "tsx harness/kadr.ts",
+    "harness:sterowanie": "tsx harness/sterowanie.ts"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.1",
+    "@types/three": "^0.185.4",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "@vercel/routing-utils": "^6.6.0",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.12.0",
+    "playwright": "^1.62.1",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.13",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "^8.69.0",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  }
+}

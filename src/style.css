@@ -1,0 +1,481 @@
+/*
+ * Set Wieszowa 3D – style F0. Kanwa na cały ekran, HUD nad nią.
+ * Kolory i czcionki z CLAUDE.md; w F0 czcionki nie są pobierane – działają
+ * zapasowe z systemu, docelowe nazwy stoją pierwsze, żeby po dodaniu plików
+ * nic tu nie zmieniać.
+ */
+:root {
+  --navy: #0a2540;
+  --blue: #0a5aa8;
+  --blue-light: #109ce4;
+  --red: #d62410;
+  /*
+   * Tylko tekst na granacie. Czerwień klubowa --red ma na granacie kontrast 3,05:1,
+   * za mało dla 13 px (WCAG AA wymaga 4,5:1); ten odcień daje 5,03:1. Kapsuły,
+   * kropki odbić i pasek toasta zostają w --red – tam kontrast tekstu nie gra roli.
+   */
+  --red-text: #ff5a45;
+  --amber: #fbb014;
+  --ball: #f79300;
+  --white: #ffffff;
+  --font-heading: 'Archivo Black', 'Archivo', system-ui, sans-serif;
+  --font-text: 'Archivo', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-numbers: 'JetBrains Mono', ui-monospace, monospace;
+  /* Bezpieczne marginesy telefonów z wycięciem, minimum 8 px. */
+  --safe-top: max(8px, env(safe-area-inset-top));
+  --safe-right: max(8px, env(safe-area-inset-right));
+  --safe-bottom: max(8px, env(safe-area-inset-bottom));
+  --safe-left: max(8px, env(safe-area-inset-left));
+  color-scheme: dark;
+}
+
+#game {
+  position: fixed;
+  inset: 0;
+  background: var(--navy);
+  color: var(--white);
+  font-family: var(--font-text);
+}
+
+#scene {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  touch-action: none;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Komunikat zamiast gry (brak WebGL2, błąd startu). */
+.error {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.error h1 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 28px;
+  letter-spacing: 0.02em;
+}
+
+.error p {
+  margin: 0;
+  max-width: 32em;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+/* HUD ---------------------------------------------------------------- */
+
+#hud {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+  /* Palec ma trafiać w boisko pod HUD-em; klikalny jest tylko przycisk. */
+  pointer-events: none;
+  color: var(--white);
+  font-family: var(--font-text);
+  font-size: 14px;
+  line-height: 1.2;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+}
+
+/* Elementy HUD-u mają własne display (flex); atrybut hidden musi wygrywać. */
+#hud [hidden] {
+  display: none !important;
+}
+
+.hud-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hud-score {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  border-radius: 999px;
+  background: rgb(10 37 64 / 0.85);
+  font-family: var(--font-heading);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.hud-team--blue {
+  color: var(--blue-light);
+}
+
+.hud-team--red {
+  color: var(--red-text);
+}
+
+.hud-num {
+  min-width: 1.2ch;
+  font-family: var(--font-numbers);
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-sep {
+  font-family: var(--font-numbers);
+  font-size: 18px;
+  opacity: 0.7;
+}
+
+.hud-btn {
+  pointer-events: auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--amber);
+  color: var(--navy);
+  font-family: var(--font-heading);
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  text-shadow: none;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.35);
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.hud-btn:active {
+  transform: scale(0.96);
+}
+
+.hud-btn:focus-visible {
+  outline: 3px solid var(--white);
+  outline-offset: 2px;
+}
+
+/* Po secie przycisk ma być pierwszą rzeczą, którą widzi dziecko. */
+.hud--set-over .hud-btn {
+  transform: scale(1.08);
+  animation: hud-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes hud-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(251 176 20 / 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgb(251 176 20 / 0);
+  }
+}
+
+.hud-sub {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 6px;
+  font-size: 13px;
+  opacity: 0.92;
+}
+
+.hud-touches {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  --dot: var(--blue-light);
+}
+
+.hud-touches[data-side='1'] {
+  --dot: var(--red);
+}
+
+.hud-dot {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--dot);
+  border-radius: 50%;
+  background: transparent;
+  box-sizing: border-box;
+  transition: background-color 80ms linear;
+}
+
+.hud-dot.is-used {
+  background: var(--dot);
+}
+
+.hud-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hud-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgb(255 255 255 / 0.85);
+  box-sizing: border-box;
+}
+
+.hud-fps {
+  margin-left: auto;
+  font-family: var(--font-numbers);
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+/* Komunikaty pod paskiem, wyśrodkowane – środek ekranu zostaje dla piłki. */
+.hud-messages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  text-align: center;
+}
+
+.hud-msg {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgb(10 37 64 / 0.7);
+  font-size: 15px;
+}
+
+.hud-toast {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 20px;
+  border-left: 4px solid var(--white);
+  border-radius: 8px;
+  background: rgb(10 37 64 / 0.85);
+  animation: hud-toast-in 180ms ease-out;
+}
+
+.hud-toast[data-winner='0'] {
+  border-left-color: var(--blue-light);
+}
+
+.hud-toast[data-winner='1'] {
+  border-left-color: var(--red);
+}
+
+.hud-toast-title {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  letter-spacing: 0.02em;
+}
+
+.hud-toast-sub {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+@keyframes hud-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.hud-final {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 22px;
+  border: 1px solid var(--amber);
+  border-radius: 12px;
+  background: rgb(10 37 64 / 0.92);
+}
+
+.hud-final-title {
+  font-family: var(--font-heading);
+  font-size: 24px;
+  letter-spacing: 0.02em;
+}
+
+.hud-final-hint {
+  font-size: 13px;
+  color: var(--amber);
+}
+
+@media (max-width: 360px) {
+  .hud-score {
+    font-size: 11px;
+    gap: 4px;
+    padding: 5px 10px;
+  }
+
+  .hud-num {
+    font-size: 17px;
+  }
+
+  .hud-btn {
+    padding: 0 10px;
+    font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-btn,
+  .hud-dot {
+    transition: none;
+  }
+
+  .hud--set-over .hud-btn,
+  .hud-toast {
+    animation: none;
+  }
+}
+
+/* Nakładka „Obróć telefon” (src/ui/orientation.ts) ----------------------
+   Pełny ekran nad HUD-em: w pionie mecz stoi, więc nie ma czego pokazywać pod spodem. */
+
+.rotate-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: var(--navy);
+  color: var(--white);
+  font-family: var(--font-text);
+  /* Dotyk na nakładce nie jest gestem gry – i nie przewija strony. */
+  touch-action: none;
+}
+
+.rotate-gate[hidden] {
+  display: none;
+}
+
+.rotate-gate__card {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  max-width: 22rem;
+  text-align: center;
+}
+
+/* Znak klubu zawsze w swoich proporcjach (CLAUDE.md: nigdy zniekształcony). */
+.rotate-gate__mark {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+}
+
+.rotate-gate__icon {
+  width: 96px;
+  height: 96px;
+}
+
+.rotate-gate__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.rotate-gate__frame {
+  fill: none;
+  stroke: var(--blue-light);
+  stroke-width: 3;
+  /* Ramka telefonu obraca się wokół swojego środka – to ona jest instrukcją. */
+  transform-origin: 32px 27px;
+  animation: rotate-gate-turn 3s ease-in-out infinite;
+}
+
+.rotate-gate__arrow {
+  fill: none;
+  stroke: var(--amber);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.rotate-gate__arrowhead {
+  fill: var(--amber);
+}
+
+/* Jeden obrót na trzy sekundy z długim przystankiem w poziomie – 0,33 Hz, daleko od 3 Hz. */
+@keyframes rotate-gate-turn {
+  0%,
+  25% {
+    transform: rotate(0deg);
+  }
+  55%,
+  100% {
+    transform: rotate(-90deg);
+  }
+}
+
+.rotate-gate__title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 24px;
+  letter-spacing: 0.02em;
+}
+
+.rotate-gate__text {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  color: rgb(255 255 255 / 0.78);
+}
+
+/* Furtka wygląda jak odnośnik, nie jak główna droga: obrót telefonu jest właściwym
+   wyjściem, a to jest wyjście dla dziecka z blokadą obrotu. Pole dotyku ≥ 44 px. */
+.rotate-gate__skip {
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--blue-light);
+  font: inherit;
+  font-size: 15px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rotate-gate__skip:focus-visible {
+  outline: 3px solid var(--blue-light);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rotate-gate__frame {
+    /* Ikona zostaje, ruch znika: telefon narysowany od razu w poziomie. */
+    animation: none;
+    transform: rotate(-90deg);
+  }
+}

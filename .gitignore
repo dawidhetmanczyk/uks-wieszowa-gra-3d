@@ -1,0 +1,30 @@
+# zależności
+node_modules/
+.pnpm-store/
+
+# build (.vercel/ – ustawienia i wynik CLI Vercela; build na Vercelu tworzy je obok kodu, a prettier --check i eslint nie mogą ich widzieć)
+dist/
+.vercel/
+*.local
+
+# narzędzia
+.vite/
+coverage/
+*.tsbuildinfo
+harness/wyniki/
+test-results/
+playwright-report/
+
+# edytory i system
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# logi
+*.log
+
+# lokalne ustawienia Claude Code (launch.json, uprawnienia) – nie należą do repo
+.claude/
