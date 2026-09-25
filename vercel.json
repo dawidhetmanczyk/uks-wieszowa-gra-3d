@@ -15,7 +15,7 @@
     }
   ],
   "rewrites": [
-    { "source": "^/.+/assets/(.+)$", "destination": "/assets/$1" },
+    { "source": "/:prefix+/assets/:file", "destination": "/assets/:file" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

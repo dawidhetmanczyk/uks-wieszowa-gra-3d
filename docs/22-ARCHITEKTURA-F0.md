@@ -238,3 +238,4 @@ Poprawki przed bramą F0 (2026-09-25):
 28. Pierścień = miejsce, gdzie stanąć (pkt 19).
 29. Harness na własnym porcie 4317 z kontrolą zajętości (§8) – na maszynie Dawida równolegle działają serwery Vite gry 2D i strony.
 30. Znak klubu (`src/ui/club-mark.webp`) wzięty z gry 2D z wpisem w docs/ASSETY.md; licencja: znak własny klubu, nie CC0 – do potwierdzenia przez Dawida.
+31. Wdrożenie: projekt Vercela `uks-wieszowa-gra-3d`, produkcja = `main` (decyzja Dawida 2026-09-25: F0 scalone do `main` przed bramą, brama = gra na telefonie pod adresem produkcyjnym). `source` w `vercel.json` to składnia path-to-regexp 6.1.0, nie wyrażenie regularne – pierwszy build gałęzi padł na `^/.+/assets/(.+)$`. `tests/narzedzia/vercel.test.ts` waliduje plik kodem Vercela (`@vercel/routing-utils`) i sprawdza nagłówki cache, SPA fallback oraz zagnieżdżone `…/assets/…`.

@@ -1,12 +1,12 @@
 # Raport F0 – szkielet i prototyp uczucia
 
-Gałąź: `f0/prototyp` (nie zmergowana). Data: 2026-09-05, poprawki przed bramą 2026-09-25 (§8). Autor: Claude Code, brama: Dawid.
+Gałąź: `f0/prototyp`, scalona do `main` 2026-09-25 decyzją Dawida – przed bramą, żeby grać z produkcji Vercela (§8.1). Data: 2026-09-05, poprawki przed bramą 2026-09-25 (§8). Autor: Claude Code, brama: Dawid.
 
 ## 1. Co jest do sprawdzenia na bramie
 
 Prototyp sterowania i kamery w 2 na 2: cztery kapsuły, piłka, siatka, boisko 9 × 18, pełne zasady (3 odbicia, podwójne odbicie, aut wg cienia, set do 7 / przewaga 2 / limit 10), AI Nowicjusz dla partnera i rywali, HUD, przycisk „Nowy set”. Wszystko jako kapsuły i prostokąty, bez modeli, hali, efektów, dźwięku, menu, poziomów, PWA (zgodnie z zakresem F0 w docs/21).
 
-Uruchomienie na telefonie: podgląd gałęzi `f0/prototyp` na Vercelu (projekt `uks-wieszowa-gra-3d`, kroki w §8.1) – bez sieci lokalnej i bez `pnpm dev --host`. Gra jest pozioma: w pionie pokaże się prośba o obrót z furtką „Graj mimo to”. Parametry: `?ai=1` (AI vs AI), `?serwis=1` (serwują czerwoni), `?seed=123`, `?fps=1`, `?jakosc=niska`.
+Uruchomienie na telefonie: **https://uks-wieszowa-gra-3d.vercel.app** (produkcja Vercela z `main`, §8.1) – bez sieci lokalnej i bez `pnpm dev --host`. Gra jest pozioma: w pionie pokaże się prośba o obrót z furtką „Graj mimo to”. Parametry: `?ai=1` (AI vs AI), `?serwis=1` (serwują czerwoni), `?seed=123`, `?fps=1`, `?jakosc=niska`.
 
 Awaryjnie, w tej samej sieci Wi-Fi:
 
@@ -185,23 +185,15 @@ Po przeglądzie: 129 testów w 14 plikach (było 83 w 11), wszystkie zielone; sk
 
 Brama nie odbyła się, bo test wymagał `pnpm dev --host` w sieci lokalnej. Zmiany: podgląd na Vercelu, gra w poziomie z nakładką „Obróć telefon”, kamera dobrana pod poziom, test regresji sterowania względnego, pierścień „tu stań”.
 
-### 8.1 Vercel – co kliknąć
+### 8.1 Wdrożenie na Vercelu
 
-Repo jest przygotowane (`vercel.json`: build `pnpm check && pnpm build`, katalog `dist`, `/assets/*` z `Cache-Control: public, max-age=31536000, immutable`, reszta – w tym `index.html` – `no-cache`, nieznane ścieżki → `index.html`). Nic nie wdrażałem. Kroki:
+Projekt `uks-wieszowa-gra-3d` założył Dawid 2026-09-25 (zespół dawidhetmanczyk's projects, produkcja = `main`, zmienna `ENABLE_EXPERIMENTAL_COREPACK=1` – Vercel bierze pnpm z pola `packageManager`, Node z `engines.node` = `22.x`). Decyzja Dawida z tego samego dnia: F0 scalone do `main` przed bramą, a brama to gra na telefonie pod adresem produkcyjnym **https://uks-wieszowa-gra-3d.vercel.app**. Domyślna ochrona wdrożeń Vercela (Standard Protection) nie obejmuje domeny produkcyjnej, więc telefon nie wymaga logowania; podglądy gałęzi – tak.
 
-1. vercel.com → zespół **dawidhetmanczyk's projects** → **Add New… → Project**.
-2. **Import Git Repository** → GitHub → `dawidhetmanczyk/uks-wieszowa-gra-3d` → **Import**. Jeśli repo nie ma na liście: **Adjust GitHub App Permissions** i dodaj je.
-3. **Project Name**: `uks-wieszowa-gra-3d`. **Framework Preset**: Vite (wykryje sam). **Root Directory**: `./`. **Build and Output Settings** zostaw – `vercel.json` je nadpisuje.
-4. **Environment Variables**: dodaj `ENABLE_EXPERIMENTAL_COREPACK` = `1` (wszystkie środowiska). Wtedy Vercel użyje pnpm 10.23.0 z pola `packageManager`, tego samego co lokalnie; Node bierze z `engines.node` = `22.x`.
-5. **Deploy**. To pierwsze wdrożenie buduje `main`, a tam jest tylko koncepcja – **może się nie udać i to jest w porządku** (produkcja = `main`, a `main` czeka na bramę). Projekt i tak powstaje.
-6. Podgląd gałęzi: gałąź `f0/prototyp` była wypchnięta przed założeniem projektu, więc Vercel zbuduje ją przy najbliższym pushu. Napisz mi, a wypchnę pusty commit, albo sam:
+`vercel.json`: install `pnpm install --frozen-lockfile`, build `pnpm check && pnpm build` (na Vercel trafia tylko to, co przechodzi pełną kontrolę), katalog `dist`, `/assets/*` z `Cache-Control: public, max-age=31536000, immutable`, reszta – w tym `index.html` – `no-cache`, nieznane ścieżki → `index.html`, zagnieżdżone `…/assets/…` → prawdziwy plik (baza Vite jest względna).
 
-```bash
-git commit --allow-empty -m "Podgląd Vercel dla f0/prototyp" && git push
-```
+Pierwszy build gałęzi `f0/prototyp` (commit f1de040) padł przed instalacją zależności: `invalid-route-source-pattern`. Wzorzec przepisania był zapisany jako wyrażenie regularne (`^/.+/assets/(.+)$`), a `source` w `vercel.json` to składnia path-to-regexp 6.1.0. Poprawka: `/:prefix+/assets/:file` → `/assets/:file`. Nowy test `tests/narzedzia/vercel.test.ts` waliduje `vercel.json` tym samym kodem, którego używa Vercel (`@vercel/routing-utils`), i sprawdza nagłówki cache, SPA fallback oraz zagnieżdżone `…/assets/…`; na starym wzorcu pada we wszystkich 4 przypadkach (sprawdzone mutacją).
 
-7. **Settings → Deployment Protection → Vercel Authentication**: domyślnie podglądy wymagają zalogowania do Vercela. Albo zaloguj się na telefonie tym samym kontem, albo wyłącz ochronę dla tego projektu.
-8. Stały adres podglądu gałęzi: **https://uks-wieszowa-gra-3d-git-f0-prototyp-dawidhetmanczyks-projects.vercel.app** (widoczny też w Deployments → wdrożenie `f0/prototyp` → Domains). Otwórz na telefonie, obróć poziomo, graj.
+WYNIK_VERCEL
 
 ### 8.2 Obaj zawodnicy drużyny gracza w kadrze – przed i po
 

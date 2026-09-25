@@ -2,7 +2,7 @@
 
 Siatkówka 2 na 2 w prawdziwym 3D dla klubu UKS Wieszowa („Wybieram Ruch”). Przeglądarka i telefon. Osobny tytuł od gry 2D `uks-wieszowa-gra`.
 
-Stan: **faza F0 – prototyp sterowania i kamery** (kapsuły i prostokąty, bez grafiki), gałąź `f0/prototyp`, czeka na bramę (Dawid gra na telefonie). Fazy i bramy: `docs/21-PROMPTY-3D.md`. Koncepcja: `docs/20-KONCEPCJA-3D.md`. Kontrakt modułów i założenia F0: `docs/22-ARCHITEKTURA-F0.md`. Raport fazy: `docs/RAPORT-F0.md`.
+Stan: **faza F0 – prototyp sterowania i kamery** (kapsuły i prostokąty, bez grafiki), scalona do `main` 2026-09-25, czeka na bramę (Dawid gra na telefonie: https://uks-wieszowa-gra-3d.vercel.app). Fazy i bramy: `docs/21-PROMPTY-3D.md`. Koncepcja: `docs/20-KONCEPCJA-3D.md`. Kontrakt modułów i założenia F0: `docs/22-ARCHITEKTURA-F0.md`. Raport fazy: `docs/RAPORT-F0.md`.
 
 ## Wymagania
 
@@ -17,7 +17,7 @@ Stan: **faza F0 – prototyp sterowania i kamery** (kapsuły i prostokąty, bez 
 | `pnpm dev` | serwer deweloperski z `--host` (telefon w tej samej sieci: `http://<ip-komputera>:5173`) |
 | `pnpm build` | build produkcyjny do `dist/` z raportem rozmiaru gzip |
 | `pnpm preview` | podgląd builda na porcie 4173 |
-| `pnpm test` | testy sim, ai, input, render (kadr), ui (nakładka) i narzędzi (skan granic) w Node (Vitest) |
+| `pnpm test` | testy sim, ai, input, render (kadr), ui (nakładka) i narzędzi (skan granic, walidacja `vercel.json`) w Node (Vitest) |
 | `pnpm test:watch` | testy w trybie watch |
 | `pnpm typecheck` | `tsc` dla trzech konfiguracji: aplikacja, sim/ai bez DOM, node (harness) |
 | `pnpm lint` | ESLint (w `src/sim` i `src/ai` zakaz `three`, `window`, `document`, `Math.random`, `Date.now`) |
@@ -34,7 +34,7 @@ Harness przyjmuje `--headless` (domyślnie okno z GPU, bo headless Chromium rend
 
 ## Wdrożenie (Vercel)
 
-Osobny projekt Vercela `uks-wieszowa-gra-3d`. `vercel.json`: build `pnpm check && pnpm build`, katalog `dist`, pliki z `/assets/*` (nazwy z haszem) z nagłówkiem `Cache-Control: public, max-age=31536000, immutable`, wszystko inne (w tym `index.html`) `no-cache`, a nieznane ścieżki dostają `index.html` (SPA fallback; zagnieżdżone `…/assets/…` wskazują na prawdziwe pliki, bo baza Vite jest względna). Podgląd gałęzi: każdy push na `f0/prototyp` daje wdrożenie podglądowe pod stałym adresem gałęzi. Kroki zakładania projektu: `docs/RAPORT-F0.md` §8.
+Osobny projekt Vercela `uks-wieszowa-gra-3d`, produkcja = `main` (https://uks-wieszowa-gra-3d.vercel.app, bez logowania); każda inna gałąź dostaje podgląd pod adresem gałęzi, chroniony logowaniem do Vercela. `vercel.json`: build `pnpm check && pnpm build`, katalog `dist`, pliki z `/assets/*` (nazwy z haszem) z nagłówkiem `Cache-Control: public, max-age=31536000, immutable`, wszystko inne (w tym `index.html`) `no-cache`, a nieznane ścieżki dostają `index.html` (SPA fallback; zagnieżdżone `…/assets/…` wskazują na prawdziwe pliki, bo baza Vite jest względna). Pole `source` w `vercel.json` to składnia path-to-regexp 6.1.0, nie wyrażenie regularne – `tests/narzedzia/vercel.test.ts` waliduje plik kodem Vercela. Szczegóły: `docs/RAPORT-F0.md` §8.1.
 
 ## Parametry URL
 
@@ -71,7 +71,7 @@ src/render/  Three.js: kamera, kapsuły, boisko, znaczniki, pomiar kadru
 src/input/   dotyk, klawiatura → komendy
 src/ui/      HUD, nakładka „Obróć telefon”
 src/loop/    pętla 1/120 s z akumulatorem i pauzą, haki dev (window.__sw3d)
-tests/       Vitest (Node): sim, ai, input, render, ui, narzedzia (skan granic na próbkach)
+tests/       Vitest (Node): sim, ai, input, render, ui, narzedzia (skan granic na próbkach, vercel.json)
 harness/     skrypty Playwright
 scripts/     check-granice.mjs – skan granic modułów (reguły eksportowane do testu)
 docs/        koncepcja, fazy, architektura, raporty, zrzuty
