@@ -193,7 +193,9 @@ Projekt `uks-wieszowa-gra-3d` założył Dawid 2026-09-25 (zespół dawidhetmanc
 
 Pierwszy build gałęzi `f0/prototyp` (commit f1de040) padł przed instalacją zależności: `invalid-route-source-pattern`. Wzorzec przepisania był zapisany jako wyrażenie regularne (`^/.+/assets/(.+)$`), a `source` w `vercel.json` to składnia path-to-regexp 6.1.0. Poprawka: `/:prefix+/assets/:file` → `/assets/:file`. Nowy test `tests/narzedzia/vercel.test.ts` waliduje `vercel.json` tym samym kodem, którego używa Vercel (`@vercel/routing-utils`), i sprawdza nagłówki cache, SPA fallback oraz zagnieżdżone `…/assets/…`; na starym wzorcu pada we wszystkich 4 przypadkach (sprawdzone mutacją).
 
-WYNIK_VERCEL
+Dwa kolejne buildy (4b6fbc4, 2fa0513) padały po ~30 s. Log od Dawida pokazał przyczynę: `prettier --check` zgłaszał `vercel.json`, choć w gicie plik jest sformatowany (świeży klon przechodzi cały build). `vercel build` zmienia formatowanie pliku w katalogu buildu, zanim uruchomi polecenie buildu. Poprawka: `vercel.json` w `.prettierignore` (treść pilnuje test), a przy okazji `.vercel/` w `.gitignore` i ignorowanych ESLint – ten krok nie był przyczyną, zostaje jako porządek. Build gałęzi 8148883 przeszedł w całości (instalacja 1,8 s, kontrola, build).
+
+Z logu: build na 4 rdzeniach / 8 GB, Node 22.x z `engines.node` (Vercel ostrzega, że nadpisuje ustawienie projektu 24.x – można je przestawić na 22.x, wtedy ostrzeżenie zniknie), pnpm 10.23.0 przez corepack.
 
 ### 8.2 Obaj zawodnicy drużyny gracza w kadrze – przed i po
 
@@ -231,7 +233,7 @@ Pierścień pokazuje teraz miejsce, gdzie stanąć (`landing.intercept` – punk
 
 W poziomie klatka jest droższa niż w pionie (p95 4,8 vs 2,9 ms przy tej samej liczbie pikseli kanwy 1688 × 780): w kadrze jest więcej podłogi z mapą cieni i więcej sceny. Przed zmianami (F0, pion 390 × 844): p95 2,4 ms, 18 draw calls, 2 288 trójkątów – dziś w pionie 19 draw calls – o jeden więcej, najpewniej dlatego, że dalsza kamera ma w kadrze obiekt, który wcześniej odcinał frustum culling (nie sprawdzałem, który).
 
-Bundle JS 148,5 kB gzip (budżet 350 kB), znak klubu 7,2 kB jako osobny plik w `/assets`, assety glTF 0 B. `pnpm check` zielony: 142 testy w 17 plikach (było 129 w 14 – doszły `tests/render/kadr.test.ts`, `tests/input/wzgledne.test.ts`, `tests/ui/orientacja.test.ts`), skan granic 39 plików, typy, lint, format. Tak jak wcześniej: to zapas CPU i GPU klasy desktop, nie pomiar Androida – ten zrób na telefonie z `?ai=1&fps=1`, a w razie spadków z `?jakosc=niska`.
+Bundle JS 148,5 kB gzip (budżet 350 kB), znak klubu 7,2 kB jako osobny plik w `/assets`, assety glTF 0 B. `pnpm check` zielony: 146 testów w 18 plikach (było 129 w 14 – doszły `tests/render/kadr.test.ts`, `tests/input/wzgledne.test.ts`, `tests/ui/orientacja.test.ts`, `tests/narzedzia/vercel.test.ts`), skan granic 39 plików, typy, lint, format. Tak jak wcześniej: to zapas CPU i GPU klasy desktop, nie pomiar Androida – ten zrób na telefonie z `?ai=1&fps=1`, a w razie spadków z `?jakosc=niska`.
 
 ### 8.6 Przyjęcie serwisu po zmianach (`pnpm harness:przyjecie`, 50 prób, 844 × 390)
 
