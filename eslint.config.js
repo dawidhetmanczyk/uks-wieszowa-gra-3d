@@ -6,7 +6,8 @@ import globals from 'globals';
 
 export default tseslint.config(
   {
-    ignores: ['dist/', 'node_modules/', 'harness/wyniki/', 'docs/zrzuty/'],
+    // .vercel/ – ustawienia i wynik CLI Vercela (build na Vercelu pisze je obok kodu).
+    ignores: ['dist/', 'node_modules/', 'harness/wyniki/', 'docs/zrzuty/', '.vercel/'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

@@ -2,8 +2,9 @@
 node_modules/
 .pnpm-store/
 
-# build
+# build (.vercel/ – ustawienia i wynik CLI Vercela; build na Vercelu tworzy je obok kodu, a prettier --check i eslint nie mogą ich widzieć)
 dist/
+.vercel/
 *.local
 
 # narzędzia
