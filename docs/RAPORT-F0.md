@@ -197,6 +197,8 @@ Dwa kolejne buildy (4b6fbc4, 2fa0513) padały po ~30 s. Log od Dawida pokazał p
 
 Z logu: build na 4 rdzeniach / 8 GB, Node 22.x z `engines.node` (Vercel ostrzega, że nadpisuje ustawienie projektu 24.x – można je przestawić na 22.x, wtedy ostrzeżenie zniknie), pnpm 10.23.0 przez corepack.
 
+Po scaleniu (commit 60dd1bb) produkcja z `main` zbudowała się za pierwszym razem. Sprawdzone bez logowania: `/`, `/index.html` i nieznana ścieżka `/mecz` dają `index.html` z `no-cache`; `/assets/index-….js` – `public, max-age=31536000, immutable`; zagnieżdżone `/mecz/assets/index-….js` – prawdziwy plik JS. W przeglądarce 844 × 390 gra rysuje się bez błędów w konsoli, a w emulacji telefonu w pionie pokazuje się nakładka „Obróć telefon”.
+
 ### 8.2 Obaj zawodnicy drużyny gracza w kadrze – przed i po
 
 Pomiar w przeglądarce (`pnpm harness:kadr`): 60 s AI vs AI, seed 7, licznik liczony przez render co klatkę tą samą kamerą, którą widzi gracz. „Cały w kadrze” = stopy i czubek głowy kapsuły, z promieniem po obu bokach, w oknie.
