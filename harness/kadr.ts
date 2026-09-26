@@ -1,10 +1,10 @@
 /**
- * Pomiar kadru: czy OBAJ zawodnicy drużyny gracza są w oknie przez 60 s meczu AI vs AI.
- *
- * Raport F0 §7 pokazał, że w pionie partner (4,5 m obok) wypada z kadru nawet przy FOV 72°.
- * Gra idzie w poziom (nakładka „Obróć telefon”), więc domyślny ekran to telefon w poziomie
- * 844 × 390. Liczy render – ta sama kamera, którą widzi gracz – co klatkę, od resetu po
- * rozgrzewce; harness tylko czyta licznik (`__sw3d.framing()`).
+ * Pomiar kadru w przeglądarce: czy OBAJ zawodnicy drużyny gracza są w oknie przez 60 s meczu
+ * AI vs AI. F0b: gra działa w obu orientacjach, a pion jest głównym trybem na telefonie –
+ * domyślny ekran to 390 × 844, `--ekran 844x390` mierzy poziom. Liczy render – ta sama
+ * kamera, którą widzi gracz – co klatkę, od resetu po rozgrzewce; harness tylko czyta
+ * licznik (`__sw3d.framing()`). Scenariusz obciążeniowy F0b (asysta + gracz przeciągany do
+ * linii) liczy test w Node: tests/render/kadr.test.ts.
  *
  * „Cały w kadrze” = stopy i czubek głowy kapsuły, z promieniem po obu bokach, w oknie.
  *
@@ -16,12 +16,11 @@ import {
   ensureServer,
   fail,
   fmt,
-  landscapeSpec,
   launchBrowser,
+  mobileSpec,
   modeLabel,
   openPage,
   parseArgs,
-  passRotateGate,
   phoneSpec,
   sleep,
   specLabel,
@@ -43,7 +42,7 @@ async function main(): Promise<void> {
   const args = parseArgs();
   const seconds = args.sekundy ?? DEFAULT_SECONDS;
   const seed = args.seed ?? DEFAULT_SEED;
-  const spec = phoneSpec(args, landscapeSpec(3));
+  const spec = phoneSpec(args, mobileSpec(3));
 
   const server = await ensureServer(args);
   let browser: Browser | null = null;
@@ -54,8 +53,6 @@ async function main(): Promise<void> {
     console.log(`Otwieram ${url} – ${specLabel(spec)}, tryb ${modeLabel(args.headless)}`);
     await page.goto(url);
     const version = await waitForHooks(page);
-    const gate = await passRotateGate(page);
-    if (gate) console.log('Nakładka „Obróć telefon” – przechodzę furtką „Graj mimo to”.');
 
     await sleep(WARMUP_MS);
     await page.evaluate(() => window.__sw3d!.resetFraming());
@@ -77,7 +74,6 @@ async function main(): Promise<void> {
       url,
       seed,
       viewport: spec,
-      passedRotateGate: gate,
       seconds,
       simTicks: tick1 - tick0,
       stats,

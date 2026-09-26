@@ -25,6 +25,55 @@ Gałąź f0/prototyp. Raport: zrzuty 390×844 i 1280×720, fps p95 / draw calls 
 
 **Brama F0:** Dawid gra 10 minut na telefonie. Pytania: trafiam w piłkę bez frustracji? wiem, gdzie spadnie? przełączanie zawodnika jest zrozumiałe? wystawa do partnera działa intuicyjnie? Jeśli „nie” na którekolwiek – F0b z poprawkami sterowania, nie F1.
 
+## F0b – sterowanie z asystą (brama: Dawid gra na telefonie, adres produkcyjny)
+
+Brama F0 (2026-09-25/26) nie przeszła: na iPhonie (Safari) „nie trafiam w piłkę, frustruję się; wiem, gdzie spadnie; nie wiem, jak skakać”.
+
+```
+F0b – sterowanie z asystą. Brama F0 nie przeszła. Dawid na iPhonie (Safari): „nie trafiam w piłkę, frustruję się; wiem, gdzie spadnie; nie wiem, jak skakać”. 60 fps. W poziomie Safari zabiera górę ekranu paskiem kart, w pionie wyglądało lepiej.
+
+Decyzje Dawida z 26.09 (nie zmieniaj ich):
+1. Asysta ruchu: aktywny zawodnik sam dobiega do punktu przyjęcia (landing.intercept, pierścień „tu stań”). Przeciągnięcie palcem (trzymane dłużej niż 200 ms) przejmuje ruch jak dziś; 0,5 s po puszczeniu asysta wraca.
+2. Uderzenie: stuknięcie w dowolnym miejscu ekranu = odbicie w cel domyślny (1. odbicie do partnera, 2. wystawa, 3. atak między rywali). Machnięcie (ruch > 30 px i puszczenie w ciągu 200 ms) = odbicie w kierunku machnięcia. Siła ataku w F0b stała z profilu, bez „trzymaj = mocniej”.
+3. Skuteczne okno czasu co najmniej 450 ms (dziś ok. 225 ms, RAPORT-F0 §8.6). Moment dalej decyduje o jakości odbicia, ale nie o tym, czy w ogóle trafisz.
+4. Lekkie spowolnienie: gdy do kontaktu aktywnego zostaje ≤ 0,4 s, tempo pętli 0,6×, po kontakcie powrót. Tylko tempo pętli – krok sim i determinizm bez zmian.
+5. Skok zostaje automatyczny, ale ma być widoczny: przy szansie na atak przy siatce czytelny znak (pierścień zmienia kolor + napis „stuknij – skok sam”).
+6. Samouczek w trakcie gry, trzy podpowiedzi po kolei: „Biegniesz sam – stuknij, gdy piłka dolatuje”, „Machnij palcem, żeby wybrać kierunek”, „Przy siatce skok jest automatyczny”. Każda znika po 3 udanych użyciach (localStorage w try/catch).
+7. Orientacja: obie, bez nakładki „Obróć telefon” i bez furtki. Pion to główny tryb na telefonie. Kamerę w pionie dobierz od nowa metodą z §8.2, pod nowy scenariusz obciążeniowy (asysta + gracz przeciągany do linii). Warunek: 100% klatek obaj w kadrze, piłka ≥ 97%. Spośród wariantów spełniających warunek wybierz ten z największym zawodnikiem (dziś 63,5 px przy 390×844). Canvas ma się mieścić między paskami Safari (visualViewport/dvh, safe-area).
+8. Android: pełny ekran z pierwszego dotyku zostaje, ale bez blokady orientacji. Pierwszy gest nie może przepaść – test.
+9. Dzisiejsze sterowanie zostaje pod ?sterowanie=reczne (do porównania, bez przycisku w UI).
+
+Pomiary przed/po w docs/RAPORT-F0b.md:
+- harness przyjęcia: skuteczne okno i % sukcesów (cel: okno ≥ 450 ms, ≥ 85% sukcesów dla tapów w oknie);
+- „gra nie gra sama”: bez żadnego dotyku drużyna gracza nie odbija piłki (asysta tylko biega);
+- kadr w pionie i w poziomie w nowym scenariuszu, rozmiar zawodnika;
+- wydajność bez regresji.
+Zrzuty: pion 390×844 i poziom 844×390, wymiana oraz atak z podpowiedzią skoku.
+
+Zasady:
+- Gałąź f0b/asysta od main. Po zielonej pełnej kontroli scal do main – decyzja Dawida 26.09: F0b testuje na adresie produkcyjnym.
+- Zapisz to polecenie w docs/21-PROMPTY-3D.md jako F0b.
+- Znak klubu: potwierdzenie czeka na Grzegorza, zostaw jak jest.
+- Nie zabijaj procesów spoza ścieżki tego repozytorium.
+- Jeśli deploy nie ruszy sam – powiedz mi, nie kombinuj z Vercel CLI.
+- Gdziekolwiek trzeba podjąć decyzję, której nie ma w tym poleceniu — NIE ZGADUJ.
+```
+
+Odpowiedzi Dawida na luki w poleceniu (2026-09-26, zadane przed implementacją):
+
+| Luka | Decyzja |
+|---|---|
+| Co robi asysta, gdy aktywny nie ma czego przyjmować | Jak AI partnera: po własnym odbiciu biegnie na miejsce ataku, gdy piłka jest u rywali – wraca na pozycję bazową |
+| Asysta stawia zawodnika na torze piłki, a ciało odbija piłkę (gra grałaby sama) | Przy asyście kapsuły gracza i partnera nie odbijają piłki – piłka przez nie przelatuje |
+| Serwis gracza | Stuknięcie = serwis lobem w cel domyślny, machnięcie = lob w kierunku machnięcia, bez przytrzymania |
+| Stała siła ataku | 0,5 (14 m/s) |
+| Zakres `?sterowanie=reczne` | Pełne F0: wejście F0, okno ~225 ms, bez spowolnienia, ciało odbija piłkę; kamera i orientacja jak w F0b |
+| Kolor pierścienia przy szansie na atak ze skokiem | Jasnoniebieski #109CE4 |
+| Gdzie napis „stuknij – skok sam” i podpowiedzi samouczka | Pasek komunikatów u góry (HUD) |
+| Kamera pionu: kryterium „największy zawodnik” dawało płaskie boisko (zawodnik 61,3 px, nasza połowa 35 px); warianty spełniające warunek różniły się zawodnikiem o 1,6 px, a głębią prawie dwukrotnie (zadane po przeszukaniu) | Wariant C: głębia jak pod koniec F0 – kamera 4,86 m, zawodnik 59,7 px, nasza połowa 65 px |
+
+**Brama F0b:** Dawid gra na telefonie pod adresem produkcyjnym. Te same pytania co w F0.
+
 ## F1 – pełna symulacja, trzy poziomy, strojenie
 
 ```

@@ -5,7 +5,7 @@
 export { createSimState, cloneState } from './state';
 export type { SimOptions } from './state';
 export { step } from './step';
-export { canReach, reachWindow } from './predict';
+export { canReach, jumpAttackChance, reachWindow } from './predict';
 export { defaultAttackTarget } from './contact';
 export { createRecording, appendTick, replay } from './recording';
 

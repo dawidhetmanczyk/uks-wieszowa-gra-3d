@@ -27,7 +27,13 @@
  * w najbliższym ticku (≤ 8,3 ms) – na telefonie 60 Hz dochodzi do tego ≤ 16,7 ms klatki,
  * czyli mniej niż trzecia część kosza histogramu. `--vsync` przywraca limit.
  *
- * Użycie: pnpm harness:przyjecie [--url <adres>] [--headless] [--vsync] [--proby 50] [--seed 7] [--build]
+ * F0b (decyzje Dawida z 2026-09-26): domyślnie tryb asysty – do punktu przyjęcia biegnie
+ * asysta (bez klawiszy), a stuknięcie pada w oknie [wejście − 500 ms, wejście + 400 ms), żeby
+ * zmierzyć skuteczne okno (cel: ≥ 450 ms, ≥ 85 % udanych stuknięć w oknie). Skuteczne okno =
+ * najdłuższy ciąg sąsiednich koszy 50 ms, w których każdy ma ≥ 85 % udanych. `--reczne` –
+ * pełne F0 (?sterowanie=reczne, dobieg WASD, okno ±250 ms) do pomiaru „przed”.
+ *
+ * Użycie: pnpm harness:przyjecie [--reczne] [--url <adres>] [--headless] [--vsync] [--proby N] [--seed 7] [--build]
  */
 import type { Browser, Page } from 'playwright';
 import type {
@@ -44,10 +50,10 @@ import {
   ensureServer,
   fail,
   fmt,
+  controlQuery,
   launchBrowser,
   mean,
-  landscapeSpec,
-  passRotateGate,
+  mobileSpec,
   phoneSpec,
   modeLabel,
   nextFloat,
@@ -61,7 +67,9 @@ import {
   writeResult,
 } from './wspolne';
 
-const DEFAULT_ATTEMPTS = 50;
+/** Asysta: szerszy rozrzut, więc więcej prób na kosz; tryb ręczny jak w F0. */
+const DEFAULT_ATTEMPTS_ASSIST = 150;
+const DEFAULT_ATTEMPTS_MANUAL = 50;
 const DEFAULT_SEED = 7;
 /** Seed seta = ATTEMPT_SEED_BASE + numer próby – ten sam serwis przy każdym uruchomieniu. */
 const ATTEMPT_SEED_BASE = 1000;
@@ -72,8 +80,11 @@ const ATTEMPT_SEED_BASE = 1000;
  */
 const TAP_FX = 0.5;
 const TAP_FY = 0.72;
-/** Rozrzut tapu wokół wejścia w zasięg: [−TAP_SPREAD_MS, +TAP_SPREAD_MS). */
-const TAP_SPREAD_MS = 250;
+/** Rozrzut stuknięcia wokół wejścia w zasięg [od, do) ms – F0: ±250, F0b: szerzej, żeby objąć okno. */
+const SPREAD_MANUAL = { fromMs: -250, toMs: 250 } as const;
+const SPREAD_ASSIST = { fromMs: -500, toMs: 400 } as const;
+/** Kosz liczy się do skutecznego okna, gdy ma co najmniej tyle udanych (cel z polecenia F0b). */
+const WINDOW_MIN_RATE = 0.85;
 const RESET_TIMEOUT_MS = 2000;
 /** AI serwuje po 1,0 s; 5 s to już awaria. */
 const SERVE_TIMEOUT_MS = 5000;
@@ -95,8 +106,6 @@ const RUN_DEADBAND_M = 0.2;
 /** Po tapie kontakt następuje najpóźniej po 0,12 s (okno po puszczeniu); 0,6 s starczy, by tor się ustabilizował. */
 const SETTLE_MS = 600;
 const HIST_BIN_MS = 50;
-const HIST_MIN_MS = -250;
-const HIST_MAX_MS = 250;
 
 /**
  * Powody porażki:
@@ -147,10 +156,13 @@ interface Attempt {
 
 async function main(): Promise<void> {
   const args = parseArgs();
-  const attemptsCount = args.proby ?? DEFAULT_ATTEMPTS;
+  const manual = args.reczne;
+  const spread = manual ? SPREAD_MANUAL : SPREAD_ASSIST;
+  const attemptsCount = args.proby ?? (manual ? DEFAULT_ATTEMPTS_MANUAL : DEFAULT_ATTEMPTS_ASSIST);
   const harnessSeed = args.seed ?? DEFAULT_SEED;
-  // Telefon w poziomie – tak się gra (nakładka „Obróć telefon” w pionie); --ekran zmienia.
-  const spec = phoneSpec(args, landscapeSpec(2));
+  // Telefon w pionie – główny tryb F0b; --ekran zmienia. Sterowanie jest względne, więc
+  // miejsce stuknięcia nie ma znaczenia dla gry.
+  const spec = phoneSpec(args, mobileSpec(2));
   const TAP_X = Math.round(spec.width * TAP_FX);
   const TAP_Y = Math.round(spec.height * TAP_FY);
 
@@ -158,7 +170,9 @@ async function main(): Promise<void> {
   // niezależny od tego, ile prób padło na „brak serwisu”.
   const rng: RngHolder = { rng: seedRng(harnessSeed) };
   const delays: number[] = [];
-  for (let i = 0; i < attemptsCount; i++) delays.push((nextFloat(rng) * 2 - 1) * TAP_SPREAD_MS);
+  for (let i = 0; i < attemptsCount; i++) {
+    delays.push(spread.fromMs + nextFloat(rng) * (spread.toMs - spread.fromMs));
+  }
 
   const server = await ensureServer(args);
   // Przeglądarka wewnątrz try: gdy start Chromium padnie, finally i tak ubije serwer
@@ -167,11 +181,10 @@ async function main(): Promise<void> {
   try {
     browser = await launchBrowser(args.headless, { uncappedFrameRate: !args.vsync });
     const { page, errors } = await openPage(browser, spec);
-    const url = withQuery(server.url, {});
+    const url = withQuery(server.url, controlQuery(manual));
     console.log(`Otwieram ${url} – ${specLabel(spec)}, tryb ${modeLabel(args.headless)}`);
     await page.goto(url);
     const version = await waitForHooks(page);
-    await passRotateGate(page);
 
     const attempts: Attempt[] = [];
     let resetWarned = false;
@@ -309,8 +322,9 @@ async function main(): Promise<void> {
         }
         lastActive = snap.active;
         const inReach = snap.reach !== null && snap.reach.enterInS <= 0;
+        // Tryb asysty: biegnie asysta, klawisze zostają puszczone. F0: dobieg WASD.
         const desired =
-          snap.landing.valid && !inReach
+          manual && snap.landing.valid && !inReach
             ? runUpKeys(snap.pos, snap.landing.intercept)
             : new Set<string>();
         attempt.runUpKeyChanges += await applyKeys(page, held, desired);
@@ -395,7 +409,8 @@ async function main(): Promise<void> {
     const meanContactDelay = mean(
       successes.map((a) => a.contactDelayMs).filter((d): d is number => d !== null),
     );
-    const histogram = buildHistogram(tapped);
+    const histogram = buildHistogram(tapped, spread);
+    const effective = effectiveWindow(histogram);
     const reasons = new Map<FailReason, number>();
     for (const a of valid) {
       if (a.reason) reasons.set(a.reason, (reasons.get(a.reason) ?? 0) + 1);
@@ -410,7 +425,8 @@ async function main(): Promise<void> {
       gameVersion: version,
       harnessSeed,
       attemptsCount,
-      tap: { x: TAP_X, y: TAP_Y, spreadMs: TAP_SPREAD_MS },
+      controlMode: manual ? 'manual' : 'assist',
+      tap: { x: TAP_X, y: TAP_Y, spread },
       viewport: spec,
       successCount: successes.length,
       validCount: valid.length,
@@ -419,6 +435,7 @@ async function main(): Promise<void> {
       meanQuality,
       meanContactDelayMs: meanContactDelay,
       histogram,
+      effectiveWindow: effective,
       failures: Object.fromEntries(reasons),
       attempts,
       errors,
@@ -426,9 +443,10 @@ async function main(): Promise<void> {
     const file = writeResult('przyjecie', result);
 
     console.log('');
-    console.log('=== Harness przyjęcie – Set Wieszowa 3D F0 ===');
+    console.log('=== Harness przyjęcie – Set Wieszowa 3D F0b ===');
+    const control = manual ? 'ręczne (pełne F0, dobieg WASD)' : 'asysta F0b (dobieg sam)';
     console.log(
-      `Tryb: ${result.mode}; gra ${version}; ${attemptsCount} prób; seed harnessu ${harnessSeed}; dobieg WASD, tap (${TAP_X}, ${TAP_Y}) w oknie [wejście − ${TAP_SPREAD_MS} ms, +${TAP_SPREAD_MS} ms]`,
+      `Tryb: ${result.mode}; sterowanie ${control}; gra ${version}; ${attemptsCount} prób; seed harnessu ${harnessSeed}; stuknięcie (${TAP_X}, ${TAP_Y}) w oknie [wejście ${spread.fromMs} ms, wejście +${spread.toMs} ms)`,
     );
     console.log(
       `Sukcesy: ${successes.length}/${valid.length} (${fmt(successRate * 100)} %) wiarygodnych prób; niewiarygodne (przystanek pętli renderu): ${stalled.length}; średnia jakość udanych ${fmt(meanQuality, 2)}; średnie opóźnienie kontaktu ${fmt(meanContactDelay, 0)} ms`,
@@ -438,6 +456,11 @@ async function main(): Promise<void> {
       const bar = '█'.repeat(bin.count);
       console.log(`  ${bin.label.padEnd(14)} ${bar.padEnd(12)} ${bin.count} / ${bin.successes}`);
     }
+    console.log(
+      effective
+        ? `Skuteczne okno (kosze ≥ ${WINDOW_MIN_RATE * 100} % udanych): [${effective.fromMs}, ${effective.toMs}) ms = ${effective.widthMs} ms; w oknie ${effective.successes}/${effective.attempts} (${fmt(effective.rate * 100)} %)`
+        : 'Skuteczne okno: brak kosza z ≥ 85 % udanych',
+    );
     const failed = valid.filter((a) => !a.success);
     console.log(`Porażki: ${failed.length}`);
     for (const [reason, count] of reasons) console.log(`  ${reason}: ${count}`);
@@ -456,7 +479,9 @@ async function main(): Promise<void> {
     }
     console.log(`Błędy strony: ${errors.length}`);
     for (const e of errors.slice(0, 10)) console.log(`  ${e}`);
-    console.log('Próg: brak w CLAUDE.md – odsetek idzie do raportu fazy, ocenia go brama F0.');
+    console.log(
+      'Cel F0b (docs/21): okno ≥ 450 ms i ≥ 85 % udanych w oknie. Brak progu w CLAUDE.md – ocenia brama.',
+    );
     console.log(`Zapisano: ${file}`);
   } finally {
     await browser?.close();
@@ -538,8 +563,13 @@ interface HistogramBin {
   successes: number;
 }
 
-/** Kosze co 50 ms od −250 do +250 ms plus dwa brzegowe poza oknem. */
-function buildHistogram(tapped: readonly Attempt[]): HistogramBin[] {
+/** Kosze co 50 ms w zakresie rozrzutu plus dwa brzegowe poza nim. */
+function buildHistogram(
+  tapped: readonly Attempt[],
+  spread: { fromMs: number; toMs: number },
+): HistogramBin[] {
+  const HIST_MIN_MS = spread.fromMs;
+  const HIST_MAX_MS = spread.toMs;
   const bins: HistogramBin[] = [
     { label: `< ${HIST_MIN_MS} ms`, fromMs: null, toMs: HIST_MIN_MS, count: 0, successes: 0 },
   ];
@@ -571,6 +601,48 @@ function buildHistogram(tapped: readonly Attempt[]): HistogramBin[] {
     if (a.success) bin.successes++;
   }
   return bins;
+}
+
+interface EffectiveWindow {
+  fromMs: number;
+  toMs: number;
+  widthMs: number;
+  attempts: number;
+  successes: number;
+  rate: number;
+}
+
+/**
+ * Skuteczne okno: najdłuższy ciąg sąsiednich koszy 50 ms (bez brzegowych), w którym każdy kosz
+ * ma próby i ≥ WINDOW_MIN_RATE udanych. Pusty kosz przerywa ciąg – o nim nic nie wiemy.
+ */
+function effectiveWindow(bins: readonly HistogramBin[]): EffectiveWindow | null {
+  let best: EffectiveWindow | null = null;
+  let run: HistogramBin[] = [];
+  const close = (): void => {
+    if (run.length === 0) return;
+    const first = run[0]!;
+    const last = run[run.length - 1]!;
+    const attempts = run.reduce((n, b) => n + b.count, 0);
+    const successes = run.reduce((n, b) => n + b.successes, 0);
+    const w: EffectiveWindow = {
+      fromMs: first.fromMs ?? 0,
+      toMs: last.toMs ?? 0,
+      widthMs: (last.toMs ?? 0) - (first.fromMs ?? 0),
+      attempts,
+      successes,
+      rate: attempts > 0 ? successes / attempts : 0,
+    };
+    if (best === null || w.widthMs > best.widthMs) best = w;
+    run = [];
+  };
+  for (const b of bins) {
+    const inner = b.fromMs !== null && b.toMs !== null;
+    if (inner && b.count > 0 && b.successes / b.count >= WINDOW_MIN_RATE) run.push(b);
+    else close();
+  }
+  close();
+  return best;
 }
 
 main().catch(fail);

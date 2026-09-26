@@ -5,7 +5,7 @@
  * `structuredClone` nie istnieje w lib ES2022 bez DOM, a JSON gubi -1/null
  * niuanse i alokuje dużo. Ręczna kopia jest też najszybsza dla powtórek.
  */
-import { BALL_R, SERVE_BALL_FORWARD, SERVE_BALL_HEIGHT } from './constants';
+import { BALL_R, SERVE_BALL_FORWARD, SERVE_BALL_HEIGHT, SWING_GRACE_S, TICK_HZ } from './constants';
 import { seedRng } from './prng';
 import { basePosition, playersOf, servePosition, sideSign, slotOf, teamOf } from './spots';
 import type { PlayerId, PlayerState, SimEvent, SimState, TeamId, Vec2, Vec3 } from './types';
@@ -14,7 +14,12 @@ export interface SimOptions {
   seed: number;
   servingTeam?: TeamId;
   humanControl?: boolean;
+  /** Tryb asysty F0b (SimState.assist). Domyślnie false – F0; bez człowieka zawsze false. */
+  assist?: boolean;
 }
+
+/** Okno po puszczeniu zamachu w F0 – wartość początkowa i po resecie do serwisu. */
+const DEFAULT_GRACE_TICKS = SWING_GRACE_S * TICK_HZ;
 
 function createPlayer(id: PlayerId): PlayerState {
   const team = teamOf(id);
@@ -35,6 +40,7 @@ function createPlayer(id: PlayerId): PlayerState {
     cooldownUntilTick: 0,
     lastHitTick: -1,
     jumpSwing: false,
+    swingGraceTicks: DEFAULT_GRACE_TICKS,
   };
 }
 
@@ -63,6 +69,7 @@ export function createSimState(opts: SimOptions): SimState {
     active: 0,
     activeSinceTick: 0,
     humanControl,
+    assist: humanControl && (opts.assist ?? false),
     landing: {
       valid: false,
       pos: { x: 0, z: 0 },
@@ -115,6 +122,7 @@ export function resetForServe(state: SimState, team: TeamId): void {
     p.cooldownUntilTick = 0;
     p.lastHitTick = -1;
     p.jumpSwing = false;
+    p.swingGraceTicks = DEFAULT_GRACE_TICKS;
   }
 
   rally.phase = 'serve';
@@ -159,6 +167,7 @@ function clonePlayer(p: PlayerState): PlayerState {
     cooldownUntilTick: p.cooldownUntilTick,
     lastHitTick: p.lastHitTick,
     jumpSwing: p.jumpSwing,
+    swingGraceTicks: p.swingGraceTicks,
   };
 }
 
@@ -189,6 +198,7 @@ export function cloneState(s: SimState): SimState {
     active: s.active,
     activeSinceTick: s.activeSinceTick,
     humanControl: s.humanControl,
+    assist: s.assist,
     landing: {
       valid: s.landing.valid,
       pos: { x: s.landing.pos.x, z: s.landing.pos.z },

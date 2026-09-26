@@ -73,6 +73,11 @@ export interface PlayerState {
   /** Skok wyzwolony zamachem (auto-skok): okno kontaktu zostaje otwarte do lądowania,
    *  niezależnie od czasu trzymania – tapnięcie na wysoką piłkę nie kończy się pudłem w locie. */
   jumpSwing: boolean;
+  /**
+   * Ile ticków po puszczeniu bieżący zamach jest jeszcze „w górze” – ustalane przy starcie
+   * zamachu: SWING_GRACE_S (F0), a w trybie asysty dla aktywnego ASSIST_SWING_GRACE_S (F0b).
+   */
+  swingGraceTicks: number;
 }
 
 export interface BallState {
@@ -161,6 +166,14 @@ export interface SimState {
   activeSinceTick: number;
   /** Czy człowiek gra (false = AI vs AI, np. harness). Sim nie generuje komend – to informacja dla loop/ai. */
   humanControl: boolean;
+  /**
+   * Tryb asysty F0b (decyzje Dawida z 2026-09-26, docs/21): kapsuły drużyny człowieka nie
+   * odbijają piłki biernie (piłka przez nie przelatuje – asysta stawia zawodnika na torze,
+   * a gra nie może grać sama), a zamach aktywnego trzyma okno dłużej (ASSIST_SWING_GRACE_S).
+   * Ruch asysty to zwykłe komendy move z src/ai/assist.ts. false = F0: tryb ręczny
+   * (?sterowanie=reczne) i AI vs AI – bit w bit jak przed F0b. Zawsze false bez człowieka.
+   */
+  assist: boolean;
   /** Odświeżane w każdym kroku dla piłki w locie. */
   landing: LandingPrediction;
   lastContact: ContactInfo | null;
@@ -194,5 +207,7 @@ export interface Recording {
   seed: number;
   servingTeam: TeamId;
   humanControl: boolean;
+  /** Tryb asysty (SimState.assist) – zmienia fizykę kontaktu, więc należy do nagrania. */
+  assist: boolean;
   ticks: RecordedTick[];
 }

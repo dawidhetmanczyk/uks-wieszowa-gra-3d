@@ -1,6 +1,6 @@
 # 22 – Architektura i kontrakt F0
 
-Status: robocze (Claude Code, 2026-09-04). Uszczegółowienie docs/20 na potrzeby fazy F0. Wszystko oznaczone **[F0]** to założenie przyjęte, bo koncepcja milczała – lista zbiorcza w §9 i w raporcie fazy.
+Status: robocze (Claude Code, 2026-09-04; F0b 2026-09-26 – zmiany kontraktu w §10). Uszczegółowienie docs/20 na potrzeby fazy F0. Wszystko oznaczone **[F0]** to założenie przyjęte, bo koncepcja milczała – lista zbiorcza w §9 i w raporcie fazy.
 
 ## 1. Moduły i ich API
 
@@ -239,3 +239,73 @@ Poprawki przed bramą F0 (2026-09-25):
 29. Harness na własnym porcie 4317 z kontrolą zajętości (§8) – na maszynie Dawida równolegle działają serwery Vite gry 2D i strony.
 30. Znak klubu (`src/ui/club-mark.webp`) wzięty z gry 2D z wpisem w docs/ASSETY.md; licencja: znak własny klubu, nie CC0 – do potwierdzenia przez Dawida.
 31. Wdrożenie: projekt Vercela `uks-wieszowa-gra-3d`, produkcja = `main` (decyzja Dawida 2026-09-25: F0 scalone do `main` przed bramą, brama = gra na telefonie pod adresem produkcyjnym). `source` w `vercel.json` to składnia path-to-regexp 6.1.0, nie wyrażenie regularne – pierwszy build gałęzi padł na `^/.+/assets/(.+)$`. `tests/narzedzia/vercel.test.ts` waliduje plik kodem Vercela (`@vercel/routing-utils`) i sprawdza nagłówki cache, SPA fallback oraz zagnieżdżone `…/assets/…`. Drugi i trzeci build padły w `prettier --check` na `vercel.json`: `vercel build` zmienia formatowanie pliku w katalogu buildu (w gicie plik jest czysty), więc `vercel.json` jest w `.prettierignore`, a `.vercel/` w `.gitignore` i ignorowanych ESLint.
+
+## 10. F0b – sterowanie z asystą (2026-09-26)
+
+Decyzje Dawida: docs/21, sekcja F0b (polecenie i odpowiedzi na luki). Raport: docs/RAPORT-F0b.md. Zmiany kontraktu względem §1–§8; tryb ręczny (`?sterowanie=reczne`) i AI vs AI działają bit w bit jak w F0.
+
+### src/sim
+
+```ts
+createSimState(opts: { seed; servingTeam?; humanControl?; assist?: boolean }): SimState
+// SimState.assist – tryb asysty (zawsze false bez człowieka); Recording.assist – należy do nagrania
+// PlayerState.swingGraceTicks – okno po puszczeniu bieżącego zamachu, ustalane przy starcie zamachu
+jumpAttackChance(state): boolean   // szansa na atak ze skokiem dla aktywnego
+ASSIST_SWING_GRACE_S = 0.3         // okno po stuknięciu – tylko zamach aktywnego człowieka w trybie asysty
+ATTACK_LINE_DEPTH = 3              // „przy siatce” dla znaku skoku (linia ataku)
+```
+
+- `assist = true`: `collideBodies` pomija kapsuły drużyny 0 – piłka przelatuje przez gracza i partnera, bierny kontakt pary znika (odpowiedź Dawida z 26.09). Bez tego asysta, która stawia zawodnika na torze, grałaby za dziecko.
+- `beginSwing` ustala `swingGraceTicks`: `ASSIST_SWING_GRACE_S` dla aktywnego w trybie asysty, `SWING_GRACE_S` dla wszystkich innych (AI bez zmian). Stuknięcie przed dolotem działa, jeśli piłka wejdzie w zasięg w tym czasie; stuknięcie po wejściu – dopóki piłka jest w zasięgu (ciało jej nie odbija).
+- `jumpAttackChance`: po naszej stronie 2 odbicia (następne to atak), aktywny może dotknąć piłki, lądowanie po naszej stronie, punkt przyjęcia ≤ `ATTACK_LINE_DEPTH` od siatki. Wystawa opada stromo z ~5 m, więc w tym miejscu piłka wchodzi w zasięg od góry i sim robi auto-skok.
+
+### src/ai
+
+```ts
+createAssist(): AssistState
+assistTarget(sim, id): { goal: 'ring' | 'attack-spot' | 'base' | 'stand'; target: Vec2 | null }
+assistMove(sim, id): Vec2          // |v| ≤ 1, hamowanie przed celem (√(2·PLAYER_ACCEL·d))
+assistCommands(assist, sim): Command[]   // tylko `move` dla state.active, gdy się zmienia; bez zamachów
+```
+
+- Cel: pierścień „tu stań” (`landing.intercept`), gdy piłka leci do nas i aktywny może jej dotknąć; po własnym odbiciu (1 odbicie po naszej stronie) – miejsce ataku; piłka u rywali, po 3 odbiciach i po punkcie – pozycja bazowa; serwujący i koniec seta – stoi (odpowiedź Dawida „jak AI partnera”).
+- `partnerShouldChase`: w trybie asysty partner nie bierze pierwszego odbicia naszej akcji – bez stuknięcia człowieka drużyna gracza nie odbija piłki (pomiar „gra nie gra sama”).
+
+### src/input
+
+```ts
+type ControlMode = 'assist' | 'manual'
+createInput(target, activePlayer?, options?: { mode?: ControlMode; isServing?: (p) => boolean }): InputController
+InputController.manualSteering(): boolean   // przeciągnięcie albo klawisze ruchu, i jeszcze 0,5 s po puszczeniu
+createKeyboardInput(win, sink, mode?)       // tryb asysty: spacja = stuknięcie, strzałki przy spacji = kierunek
+ASSIST_TAP_MAX_MS = 200; FLICK_MIN_PX = 30; MANUAL_RESUME_MS = 500
+ASSIST_ATTACK_POWER = 0.5 (14 m/s); ASSIST_SERVE_POWER = 0 (lob)
+```
+
+- `asysta.ts`: palec puszczony w ≤ 200 ms – stuknięcie (ruch ≤ 30 px) albo machnięcie (> 30 px; cel z samego kierunku na elipsie `aimFromDirection`); zamach i puszczenie w chwili puszczenia palca. Palec trzymany > 200 ms – przeciągnięcie: joystick względny jak w F0 (`joystickVector`), drugi palec może w tym czasie stukać. `touch.ts` (F0) bez zmian – tryb ręczny.
+
+### src/loop
+
+- `GameOptions.controlMode` z `?sterowanie=reczne` (`parseUrlParams`). Tryb asysty: co krok `assistCommands` dla aktywnego, o ile `!input.manualSteering()` (po powrocie asysta wysyła wektor od nowa).
+- `tempo.ts`: `slowMoWanted(state)` – piłka za ≤ `SLOWMO_LEAD_S` = 0,4 s wejdzie w zasięg aktywnego, który może ją odbić (`reachWindow`); `nextTempo` – liniowo do `SLOWMO_TEMPO` = 0,6 i z powrotem w `SLOWMO_RAMP_S` = 0,1 s czasu ściennego. Tempo mnoży wyłącznie czas podawany akumulatorowi – krok sim, komendy i nagranie bez zmian.
+- Samouczek: loop pamięta gest zamachu człowieka (bez celu = stuknięcie, z celem = machnięcie) i przy kontakcie w wymianie zalicza go; kontakt w powietrzu zalicza dodatkowo skok.
+- Usunięte: nakładka i `Game.setPaused/paused`. Haki `window.__sw3d` (wersja `0.0.2-f0b`): bez `paused`; nowe `controlMode`, `tempo`, `manualSteering`, `jumpChance`, `tutorial`, `fullscreenRequested`, `viewport`.
+
+### src/render
+
+- `CameraConfig = { portrait: OrientationCamera; landscape: OrientationCamera }`, `cameraFor(config, aspect)`, `verticalFov(cam, aspect)`. `CAMERA_F0` (sprzed 2026-09-25), `CAMERA_F0_END` (koniec F0 – pomiar „przed”), `CAMERA_F0B` = `DEFAULT_CAMERA`: poziom bez zmian, pion dobrany na nowo w scenariuszu „asysta + gracz przeciągany do linii” (20 seedów): wysokość 4,86 m, z = −26,88 m, patrzy na (x, 0, −1,83), FOV 58,8°, wagi celu 0,21 / 0,35 / 0,1 (aktywny / partner / piłka) – 100 % klatek z obydwoma w kadrze, zawodnik 59,7 px, nasza połowa 65 px; wariant wybrany przez Dawida spośród spełniających warunek (docs/RAPORT-F0b.md §3.3).
+- Pierścień „tu stań” zmienia kolor na `COLOR_JUMP` = #109CE4, gdy `state.assist && jumpAttackChance(state)`.
+
+### src/ui
+
+- Usunięte `orientation.ts` i `orientation-rule.ts` (nakładka „Obróć telefon”). `club-mark.webp` zostaje w repo z wpisem w ASSETY.md (potwierdzenie czeka na Grzegorza) – po usunięciu nakładki nieużywany w kodzie.
+- `hud.ts`: `update(state, hint)`; serwis „Stuknij, żeby zaserwować” (asysta) / „Przytrzymaj, żeby zaserwować” (F0); `JUMP_HINT_TEXT` „Stuknij – skok sam”; linia `.hud-hint` z podpowiedzią samouczka.
+- `tutorial.ts` (`createTutorial(storage)`, `HINTS`, `HINT_USES_TO_HIDE` = 3, klucz `sw3d.samouczek.v1`), `fullscreen.ts` (`createFirstTouchFullscreen` – prośba na pointerup dotyku, bez blokady orientacji), `viewport.ts` (`bindVisualViewport` – visualViewport → `--app-w/-h/-top/-left`).
+
+### harness
+
+- `wspolne.ts`: `--reczne` i `controlQuery`; typ haków F0b; bez `passRotateGate`.
+- `przyjecie.ts`: domyślnie asysta (bez klawiszy), 390 × 844, 150 prób, stuknięcie w [wejście − 500, wejście + 400) ms, skuteczne okno = najdłuższy ciąg koszy 50 ms z ≥ 85 % udanych; `--reczne` = F0 (dobieg WASD, ±250 ms, 50 prób).
+- `sterowanie.ts`: pion, przypadki A i B w obu trybach (każdy w osobnej przeglądarce, `requestFullscreen` podmienione na atrapę), przypadek C – pierwszy dotyk na świeżej stronie serwuje, a pełny ekran idzie po nim.
+- `sam.ts`: 60 s bez dotyku w trybie asysty – zero kontaktów niebieskich. `zrzuty.ts`: pion i poziom – serwis, wymiana, atak z podpowiedzią skoku (`f0b-*`). `kadr.ts`: domyślnie pion.
+- `tests/render/scenariusze.ts`: scenariusz obciążeniowy F0b „asysta + gracz przeciągany do linii” (dla `kadr.test.ts` i przeszukania kamery).

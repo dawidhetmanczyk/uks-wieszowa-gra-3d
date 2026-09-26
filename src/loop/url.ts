@@ -1,8 +1,10 @@
 /**
- * Parametry startowe z adresu (docs/22 §1): ?seed=123, ?ai=1, ?serwis=1, ?fps=1 oraz
+ * Parametry startowe z adresu (docs/22 §1): ?seed=123, ?ai=1, ?serwis=1, ?fps=1,
+ * ?sterowanie=reczne (F0b: pełne sterowanie F0 do porównania, bez przycisku w UI) oraz
  * przełączniki jakości do pomiarów na telefonie: ?jakosc=niska, ?dpr=1, ?aa=0, ?cien=0.
  * Czysta funkcja od stringa – testowalna bez przeglądarki.
  */
+import type { ControlMode } from '../input/index';
 import type { RenderOptions } from '../render/index';
 import type { TeamId } from '../sim/index';
 
@@ -11,6 +13,8 @@ export interface UrlParams {
   humanControl: boolean;
   servingTeam: TeamId;
   showFps: boolean;
+  /** 'manual' tylko dla ?sterowanie=reczne; każda inna wartość (i brak) = asysta F0b. */
+  controlMode: ControlMode;
   /** Tylko pola podane w adresie – wartości domyślne zna render, nie parser. */
   render: RenderOptions;
 }
@@ -84,6 +88,7 @@ export function parseUrlParams(search: string, now: Date): UrlParams {
     humanControl: !flag(q.get('ai')),
     servingTeam: flag(q.get('serwis')) ? 1 : 0,
     showFps: flag(q.get('fps')),
+    controlMode: q.get('sterowanie')?.trim().toLowerCase() === 'reczne' ? 'manual' : 'assist',
     render: parseRenderOptions(q),
   };
 }

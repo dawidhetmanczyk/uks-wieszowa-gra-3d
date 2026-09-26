@@ -53,6 +53,11 @@ export interface InputSink {
   /** state.active z ostatniego poll – adresat komend rozpoczynanego gestu. */
   activePlayer(): PlayerId;
   now(): number;
+  /**
+   * Czy zawodnik właśnie serwuje (faza serve, on serwującym) – w trybie asysty stuknięcie
+   * serwuje lobem, a odbicie w grze ma stałą siłę ataku. Brak = nigdy (tryb F0 nie pyta).
+   */
+  isServing?(player: PlayerId): boolean;
 }
 
 /**
@@ -144,4 +149,57 @@ export function sameAim(a: Vec2 | null, b: Vec2 | null): boolean {
  */
 export function holdPower(heldS: number): number {
   return clamp((heldS - POWER_MIN_HOLD_S) / (POWER_FULL_HOLD_S - POWER_MIN_HOLD_S), 0, 1);
+}
+
+// Sterowanie z asystą (F0b, decyzje Dawida z 2026-09-26) ------------------------
+
+/**
+ * Tryb sterowania: 'assist' – F0b (asysta biegnie, stuknięcie/machnięcie uderza);
+ * 'manual' – pełne F0 pod ?sterowanie=reczne (do porównania).
+ */
+export type ControlMode = 'assist' | 'manual';
+
+/** Palec trzymany dłużej niż to = przeciągnięcie (przejmuje ruch); puszczony wcześniej = stuknięcie albo machnięcie. */
+export const ASSIST_TAP_MAX_MS = 200;
+/** Machnięcie: przesunięcie od punktu dotknięcia do puszczenia większe niż to. */
+export const FLICK_MIN_PX = 30;
+/** Po puszczeniu przeciągnięcia (albo klawiszy ruchu) asysta wraca po tym czasie. */
+export const MANUAL_RESUME_MS = 500;
+/** Stała siła ataku gracza w F0b (odpowiedź Dawida z 26.09: 0,5 = 14 m/s), bez „trzymaj = mocniej”. */
+export const ASSIST_ATTACK_POWER = 0.5;
+/** Serwis stuknięciem = lob (odpowiedź Dawida z 26.09): siła 0 daje w sim najwyższy łuk lobu. */
+export const ASSIST_SERVE_POWER = 0;
+
+/** Gest palca w trybie asysty: jeszcze nie wiadomo, przeciągnięcie (ruch), stuknięcie, machnięcie. */
+export type AssistGesture = 'pending' | 'drag' | 'tap' | 'flick';
+
+/** W trakcie trzymania: po ASSIST_TAP_MAX_MS palec staje się przeciągnięciem, niezależnie od ruchu. */
+export function classifyAssistHeld(elapsedMs: number): 'pending' | 'drag' {
+  return elapsedMs > ASSIST_TAP_MAX_MS ? 'drag' : 'pending';
+}
+
+/**
+ * Przy puszczeniu: w ciągu ASSIST_TAP_MAX_MS – machnięcie, gdy przesunięcie od punktu
+ * dotknięcia przekracza FLICK_MIN_PX, inaczej stuknięcie; później to koniec przeciągnięcia.
+ */
+export function classifyAssistRelease(elapsedMs: number, dx: number, dy: number): AssistGesture {
+  if (elapsedMs > ASSIST_TAP_MAX_MS) return 'drag';
+  return Math.hypot(dx, dy) > FLICK_MIN_PX ? 'flick' : 'tap';
+}
+
+/**
+ * Cel machnięcia: sam KIERUNEK przesunięcia (długość nie gra roli) – wektor jednostkowy
+ * trafia w aimFromDirection, czyli na elipsę celów na połowie rywali (w górę ekranu = głęboko,
+ * w bok = przy linii bocznej, w dół = krótko przy siatce).
+ */
+export function flickAim(dx: number, dy: number, team: TeamId): Vec2 | null {
+  const len = Math.hypot(dx, dy);
+  if (len <= FLICK_MIN_PX) return null;
+  const aim = aimFromDirection(dx / len, dy / len, team);
+  return aim ? quantizeAim(aim) : null;
+}
+
+/** Siła zamachu z gestu asysty: serwis = lob, każde inne odbicie = stała siła ataku. */
+export function assistSwingPower(serving: boolean): number {
+  return serving ? ASSIST_SERVE_POWER : ASSIST_ATTACK_POWER;
 }

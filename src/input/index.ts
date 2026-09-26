@@ -5,12 +5,24 @@
  * ruchów tego samego zawodnika w jednym ticku. Nic tu nie zmienia stanu sim.
  */
 import type { Command, PlayerId, SimState, Vec2 } from '../sim/index';
-import type { InputSink } from './gesty';
+import type { ControlMode, InputSink } from './gesty';
 import { holdPower } from './gesty';
+import { createAssistTouchInput } from './asysta';
 import { createKeyboardInput } from './keyboard';
 import { createTouchInput } from './touch';
 
-export { AIM_SCALE_PX, DEADZONE_PX, HOLD_MS, SATURATION_PX } from './gesty';
+export {
+  AIM_SCALE_PX,
+  ASSIST_ATTACK_POWER,
+  ASSIST_SERVE_POWER,
+  ASSIST_TAP_MAX_MS,
+  DEADZONE_PX,
+  FLICK_MIN_PX,
+  HOLD_MS,
+  MANUAL_RESUME_MS,
+  SATURATION_PX,
+} from './gesty';
+export type { ControlMode } from './gesty';
 
 /**
  * Ten sam kształt ma render (docs/22 §1) – celownik czyta `aim` i `holding`.
@@ -29,7 +41,20 @@ export interface InputController {
   /** Raz na klatkę, przed krokami sim. Zwraca komendy zebrane od ostatniego poll. */
   poll(state: SimState): Command[];
   view(): ViewState;
+  /**
+   * Tryb asysty: czy ruchem steruje teraz człowiek (przeciągnięcie palcem albo klawisze ruchu,
+   * i jeszcze 0,5 s po puszczeniu). Stan z ostatniego poll. W trybie F0 zawsze true – ruch jest
+   * wyłącznie ręczny.
+   */
+  manualSteering(): boolean;
   dispose(): void;
+}
+
+export interface InputOptions {
+  /** 'assist' – F0b; 'manual' – pełne F0 (?sterowanie=reczne). Domyślnie 'manual'. */
+  mode?: ControlMode;
+  /** Żywy odczyt „ten zawodnik właśnie serwuje” – tryb asysty serwuje stuknięciem lobem. */
+  isServing?: (player: PlayerId) => boolean;
 }
 
 /** Nowy set obsługuje loop własnym nasłuchem (porównanie z e.key). */
@@ -60,11 +85,17 @@ const IDLE_VIEW: ViewState = { aim: null, holding: false, power: 0 };
  * zawodnika (już sterowanego przez AI, które go nadpisuje). Harness łapał to jako
  * „klawisz nie działa” tuż po serwisie.
  */
-export function createInput(target: HTMLElement, activePlayer?: () => PlayerId): InputController {
+export function createInput(
+  target: HTMLElement,
+  activePlayer?: () => PlayerId,
+  options: InputOptions = {},
+): InputController {
+  const mode: ControlMode = options.mode ?? 'manual';
   const queue: Command[] = [];
   // Zapas, gdy pętla nie poda gettera: aktywny z ostatniego poll.
   let active: PlayerId = 0;
   let view: ViewState = IDLE_VIEW;
+  let manual = mode === 'manual';
 
   const sink: InputSink = {
     push: (cmd) => {
@@ -73,14 +104,18 @@ export function createInput(target: HTMLElement, activePlayer?: () => PlayerId):
     activePlayer: () => (activePlayer ? activePlayer() : active),
     // Jedyne miejsce w grze z zegarem ściennym: sim liczy siłę z ticków, input tylko ją pokazuje.
     now: () => performance.now(),
+    isServing: (player) => options.isServing?.(player) ?? false,
   };
 
-  const touch = createTouchInput(target, sink);
-  const keyboard = createKeyboardInput(window, sink);
+  // Tryb asysty: stuknięcie / machnięcie / przeciągnięcie (asysta.ts); F0: touch.ts bez zmian.
+  const touch = mode === 'assist' ? null : createTouchInput(target, sink);
+  const assistTouch = mode === 'assist' ? createAssistTouchInput(target, sink) : null;
+  const keyboard = createKeyboardInput(window, sink, mode);
 
   function computeView(now: number): ViewState {
     // Dotyk ma pierwszeństwo – na telefonie klawiatury nie ma, na komputerze rzadko trzyma się oba.
-    const hold = touch.hold() ?? keyboard.hold();
+    // W trybie asysty nie ma trzymania, więc celownik się nie pokazuje (hold zawsze null).
+    const hold = touch?.hold() ?? keyboard.hold();
     if (!hold) return IDLE_VIEW;
     return { aim: hold.aim, holding: true, power: holdPower((now - hold.sinceMs) / 1000) };
   }
@@ -89,17 +124,26 @@ export function createInput(target: HTMLElement, activePlayer?: () => PlayerId):
     poll(state) {
       active = state.active;
       const now = sink.now();
-      touch.advance(now);
+      touch?.advance(now);
+      assistTouch?.advance(now);
       const out = coalesceCommands(queue);
       queue.length = 0;
       view = computeView(now);
+      manual =
+        mode === 'manual' ||
+        (assistTouch?.manualSteering(now) ?? false) ||
+        keyboard.manualSteering(now);
       return out;
     },
     view() {
       return view;
     },
+    manualSteering() {
+      return manual;
+    },
     dispose() {
-      touch.dispose();
+      touch?.dispose();
+      assistTouch?.dispose();
       keyboard.dispose();
       queue.length = 0;
       view = IDLE_VIEW;

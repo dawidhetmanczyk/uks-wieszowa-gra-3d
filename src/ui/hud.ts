@@ -8,8 +8,12 @@
  *
  * HUD nie zna zegara ściennego: toast po punkcie trwa tyle ticków sim, co pauza
  * po punkcie, więc w powtórce (ten sam stan) wygląda identycznie.
+ *
+ * F0b (tryb asysty, state.assist): „Stuknij, żeby zaserwować”, przy szansie na atak ze
+ * skokiem napis „Stuknij – skok sam” (decyzja Dawida 5) i linia podpowiedzi samouczka
+ * (decyzja 6) – wszystko w pasku komunikatów u góry (odpowiedź Dawida z 26.09).
  */
-import { POINT_FREEZE_S, TICK_HZ } from '../sim/index';
+import { jumpAttackChance, POINT_FREEZE_S, TICK_HZ } from '../sim/index';
 import type { PointReason, SimState, TeamId } from '../sim/index';
 
 export interface HudHandlers {
@@ -22,7 +26,8 @@ export interface HudOptions {
 }
 
 export interface Hud {
-  update(state: SimState): void;
+  /** `hint` – tekst bieżącej podpowiedzi samouczka albo null (brak / samouczek zakończony). */
+  update(state: SimState, hint?: string | null): void;
   /** Ostatni pomiar fps z pętli; ignorowany, gdy licznik jest wyłączony. */
   setFps(fps: number): void;
   dispose(): void;
@@ -57,6 +62,8 @@ interface HudView {
   controlColor: string;
   /** Pusty string = komunikat ukryty. */
   message: string;
+  /** Podpowiedź samouczka; pusty string = ukryta. */
+  hint: string;
   toastTitle: string;
   toastSub: string;
   toastWinner: TeamId | -1;
@@ -72,6 +79,7 @@ const EMPTY_VIEW: HudView = {
   controlText: '',
   controlColor: '',
   message: '',
+  hint: '',
   toastTitle: '',
   toastSub: '',
   toastWinner: -1,
@@ -83,7 +91,10 @@ function otherTeam(team: TeamId): TeamId {
   return team === 0 ? 1 : 0;
 }
 
-function buildView(state: SimState): HudView {
+/** Napis przy szansie na atak ze skokiem (decyzja Dawida 5). */
+export const JUMP_HINT_TEXT = 'Stuknij – skok sam';
+
+function buildView(state: SimState, hint: string | null): HudView {
   const { rally, score } = state;
   const phase = rally.phase;
 
@@ -99,13 +110,18 @@ function buildView(state: SimState): HudView {
   let message = '';
   if (phase === 'serve') {
     if (state.humanControl && rally.server === state.active) {
-      message = 'Przytrzymaj, żeby zaserwować';
+      // Tryb asysty: serwis stuknięciem (lob) albo machnięciem; F0: przytrzymanie.
+      message = state.assist ? 'Stuknij, żeby zaserwować' : 'Przytrzymaj, żeby zaserwować';
     } else if (rally.servingTeam === 1) {
       message = 'Serwują czerwoni';
     } else {
       message = state.humanControl ? 'Serwuje partner' : 'Serwują niebiescy';
     }
+  } else if (state.assist && jumpAttackChance(state)) {
+    message = JUMP_HINT_TEXT;
   }
+  // Podpowiedź samouczka tylko w grze (serwis, wymiana) – po punkcie mówi toast.
+  const hintText = hint !== null && (phase === 'serve' || phase === 'rally') ? hint : '';
 
   let toastTitle = '';
   let toastSub = '';
@@ -141,6 +157,7 @@ function buildView(state: SimState): HudView {
     controlText,
     controlColor,
     message,
+    hint: hintText,
     toastTitle,
     toastSub,
     toastWinner,
@@ -209,6 +226,9 @@ export function createHud(root: HTMLElement, handlers: HudHandlers, options: Hud
   const msg = el('div', 'hud-msg', '');
   msg.setAttribute('role', 'status');
   msg.hidden = true;
+  const hintLine = el('div', 'hud-hint', '');
+  hintLine.setAttribute('role', 'status');
+  hintLine.hidden = true;
   const toast = el('div', 'hud-toast');
   const toastTitle = el('b', 'hud-toast-title', '');
   const toastSub = el('span', 'hud-toast-sub', '');
@@ -219,7 +239,7 @@ export function createHud(root: HTMLElement, handlers: HudHandlers, options: Hud
   const finalTitle = el('b', 'hud-final-title', '');
   final.append(finalTitle, el('span', 'hud-final-hint', 'Naciśnij „Nowy set” albo klawisz N'));
   final.hidden = true;
-  messages.append(msg, toast, final);
+  messages.append(msg, hintLine, toast, final);
 
   root.classList.add('hud');
   root.append(top, sub, messages);
@@ -241,8 +261,8 @@ export function createHud(root: HTMLElement, handlers: HudHandlers, options: Hud
   let prev: HudView = EMPTY_VIEW;
   let prevFps = '';
 
-  function update(state: SimState): void {
-    const v = buildView(state);
+  function update(state: SimState, hint: string | null = null): void {
+    const v = buildView(state, hint);
 
     if (v.points0 !== prev.points0) num0.textContent = v.points0;
     if (v.points1 !== prev.points1) num1.textContent = v.points1;
@@ -261,6 +281,10 @@ export function createHud(root: HTMLElement, handlers: HudHandlers, options: Hud
     if (v.message !== prev.message) {
       msg.textContent = v.message;
       msg.hidden = v.message === '';
+    }
+    if (v.hint !== prev.hint) {
+      hintLine.textContent = v.hint;
+      hintLine.hidden = v.hint === '';
     }
 
     if (v.toastTitle !== prev.toastTitle || v.toastSub !== prev.toastSub) {
