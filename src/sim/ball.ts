@@ -110,6 +110,9 @@ function collideFloor(state: SimState, netBounced: boolean): void {
 function collideBodies(state: SimState): void {
   const ball = state.ball;
   for (const p of state.players) {
+    // Tryb asysty (decyzja Dawida 2026-09-26): kapsuły pary człowieka nie odbijają piłki –
+    // asysta stawia zawodnika na torze, a bez stuknięcia drużyna gracza nie może odbić piłki.
+    if (state.assist && p.team === 0) continue;
     // Po własnym uderzeniu kapsuła nie koliduje; w oknie zamachu rozstrzyga contact.ts.
     if (p.lastHitTick >= 0 && state.tick - p.lastHitTick < BODY_IMMUNITY_TICKS) continue;
     if (isSwingActive(state, p)) continue;

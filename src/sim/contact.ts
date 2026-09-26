@@ -9,6 +9,7 @@
  */
 import { clearsNet, positionAt, solveArc, solveShot } from './ballistics';
 import {
+  ASSIST_SWING_GRACE_S,
   ATTACK_SPEED_MAX,
   ATTACK_SPEED_MIN,
   AUTO_JUMP_ABOVE,
@@ -65,6 +66,7 @@ import { clamp, lerp } from './vec';
 
 const HOLD_MAX_TICKS = SWING_HOLD_MAX_S * TICK_HZ;
 const GRACE_TICKS = SWING_GRACE_S * TICK_HZ;
+const ASSIST_GRACE_TICKS = Math.round(ASSIST_SWING_GRACE_S * TICK_HZ);
 const WHIFF_COOLDOWN_TICKS = Math.round(SWING_WHIFF_COOLDOWN_S * TICK_HZ);
 
 // Komendy ----------------------------------------------------------------
@@ -91,6 +93,9 @@ export function beginSwing(
   if (p.swingStartTick >= 0) return;
   p.swingStartTick = state.tick;
   p.swingReleaseTick = -1;
+  // Okno ustalane raz na zamach: dłuższe tylko dla człowieka w trybie asysty (aktywny w chwili
+  // zamachu – AI nigdy nim nie steruje), żeby AI grało bit w bit jak w F0.
+  p.swingGraceTicks = state.assist && p.id === state.active ? ASSIST_GRACE_TICKS : GRACE_TICKS;
   p.swingPower = power === undefined ? null : clamp(power, 0, 1);
   setAim(p, aim);
 }
@@ -115,7 +120,8 @@ export function setAim(p: PlayerState, aim: Vec2 | null): void {
 // Okno, siła, jakość -----------------------------------------------------
 
 /**
- * Ręce w górze: trzyma (≤ SWING_HOLD_MAX_S) albo puścił przed chwilą (≤ SWING_GRACE_S).
+ * Ręce w górze: trzyma (≤ SWING_HOLD_MAX_S) albo puścił przed chwilą (≤ swingGraceTicks:
+ * SWING_GRACE_S w F0, ASSIST_SWING_GRACE_S dla aktywnego w trybie asysty).
  * Wyjątek: skok wyzwolony zamachem trzyma okno otwarte do lądowania – tapnięcie na wysoką
  * piłkę uruchamia skok trwający ~0,39 s do apogeum, a okno po puszczeniu ma 0,12 s, więc
  * bez tego wyjątku każdy taki skok kończył się pudłem w powietrzu i odbiciem od głowy.
@@ -125,7 +131,7 @@ export function isSwingActive(state: SimState, p: PlayerState): boolean {
   if (p.swingStartTick < 0) return false;
   if (p.jumpSwing && !p.grounded) return true;
   if (p.swingReleaseTick < 0) return state.tick - p.swingStartTick <= HOLD_MAX_TICKS;
-  return state.tick - p.swingReleaseTick <= GRACE_TICKS;
+  return state.tick - p.swingReleaseTick <= p.swingGraceTicks;
 }
 
 /** Czas trzymania (w tickach) do teraz albo do puszczenia. */

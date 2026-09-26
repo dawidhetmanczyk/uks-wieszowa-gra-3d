@@ -12,6 +12,7 @@ export function createRecording(state: SimState): Recording {
     seed: state.seed,
     servingTeam: state.rally.servingTeam,
     humanControl: state.humanControl,
+    assist: state.assist,
     ticks: [],
   };
 }
@@ -41,6 +42,7 @@ export function replay(rec: Recording, untilTick?: number): SimState {
     seed: rec.seed,
     servingTeam: rec.servingTeam,
     humanControl: rec.humanControl,
+    assist: rec.assist,
   });
   const last = rec.ticks.length > 0 ? rec.ticks[rec.ticks.length - 1]!.tick + 1 : 0;
   const end = untilTick ?? last;

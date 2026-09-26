@@ -23,7 +23,6 @@ import {
   launchBrowser,
   mean,
   mobileSpec,
-  passRotateGate,
   phoneSpec,
   modeLabel,
   openPage,
@@ -95,10 +94,6 @@ async function main(): Promise<void> {
     );
     await page.goto(url);
     const version = await waitForHooks(page);
-    // W pionie nakładka „Obróć telefon” zatrzymuje mecz – mierzymy grę za furtką.
-    const passedRotateGate = await passRotateGate(page);
-    if (passedRotateGate)
-      console.log('Nakładka „Obróć telefon” – przechodzę furtką „Graj mimo to”.');
 
     // Throttling dopiero po załadowaniu: czas ładowania mierzy Lighthouse, tu
     // interesuje nas klatka w trakcie gry na wolnym telefonie.
@@ -198,7 +193,6 @@ async function main(): Promise<void> {
       /** true = Chromium bez limitu klatek (delta rAF = koszt klatki); false = --vsync. */
       uncappedFrameRate,
       /** true = telefon w pionie, pomiar za furtką „Graj mimo to”. */
-      passedRotateGate,
       url,
       gameVersion: version,
       seed,

@@ -5,3 +5,5 @@ export type { AiProfile } from './profile';
 export { NOWICJUSZ } from './profile';
 export type { AiRole, AiState, PlayerBrain, TeamBrain } from './brain';
 export { aiCommands, createAi } from './brain';
+export type { AssistGoal, AssistState, AssistTarget } from './assist';
+export { assistCommands, assistMove, assistTarget, createAssist } from './assist';

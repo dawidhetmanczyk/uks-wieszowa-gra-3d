@@ -2,14 +2,26 @@
  * Klawiatura → komendy sim (docs/22 §4). WASD/strzałki = ruch, strzałki przy
  * trzymanej spacji = cel, spacja = zamach / puszczenie.
  *
+ * Tryb asysty F0b (odpowiednik dotyku z src/input/asysta.ts): klawisze ruchu przejmują bieg
+ * jak przeciągnięcie palcem (asysta wraca 0,5 s po puszczeniu ostatniego), spacja = stuknięcie
+ * (odbicie w cel domyślny, w fazie serwisu – serwis lobem), spacja przy strzałkach = machnięcie
+ * w ich kierunku. Siła stała – bez „trzymaj = mocniej”, więc keyup spacji niczego nie wysyła.
+ *
  * Nasłuch na window, żeby gra nie wymagała fokusu na canvasie. Pola formularzy
  * i przyciski są omijane przy keydown, bo tam spacja i strzałki znaczą coś
  * innego; keyup obsługujemy zawsze, żeby klawisz nie „zawisł” po ucieczce fokusu.
  */
 import { teamOf } from '../sim/index';
 import type { PlayerId, TeamId, Vec2 } from '../sim/index';
-import type { HoldInfo, InputSink } from './gesty';
-import { aimFromArrows, keyboardVector, sameAim, sameVec2 } from './gesty';
+import type { ControlMode, HoldInfo, InputSink } from './gesty';
+import {
+  aimFromArrows,
+  assistSwingPower,
+  keyboardVector,
+  MANUAL_RESUME_MS,
+  sameAim,
+  sameVec2,
+} from './gesty';
 
 /** e.code zamiast e.key: niezależne od układu, Caps Locka i Shifta. */
 const MOVE_CODES: ReadonlySet<string> = new Set([
@@ -26,16 +38,27 @@ const SWING_CODE = 'Space';
 const TYPING_SELECTOR = 'input, textarea, select, button, [contenteditable]';
 
 export interface KeyboardInput {
-  /** Trwający zamach ze spacji albo null. */
+  /** Trwający zamach ze spacji albo null (w trybie asysty zawsze null – nie ma trzymania). */
   hold(): HoldInfo | null;
+  /** Tryb asysty: czy ruchem sterują klawisze (wciśnięte albo puszczone < 0,5 s temu). */
+  manualSteering(now: number): boolean;
   dispose(): void;
 }
 
 function isTyping(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest(TYPING_SELECTOR) !== null;
+  // `typeof Element`: w teście w Node (tests/input/asysta-wejscie.test.ts) DOM-u nie ma.
+  return (
+    typeof Element !== 'undefined' &&
+    target instanceof Element &&
+    target.closest(TYPING_SELECTOR) !== null
+  );
 }
 
-export function createKeyboardInput(win: Window, sink: InputSink): KeyboardInput {
+export function createKeyboardInput(
+  win: Window,
+  sink: InputSink,
+  mode: ControlMode = 'manual',
+): KeyboardInput {
   const pressed = new Set<string>();
   /** Adresat trwającej „sesji ruchu”: od pierwszego klawisza do puszczenia ostatniego. */
   let moveTarget: PlayerId | null = null;
@@ -43,6 +66,8 @@ export function createKeyboardInput(win: Window, sink: InputSink): KeyboardInput
   let swingTarget: PlayerId | null = null;
   let swingAt = 0;
   let sentAim: Vec2 | null = null;
+  /** Tryb asysty: do tej chwili ruch należy jeszcze do klawiszy, choć żaden nie jest wciśnięty. */
+  let manualUntil = -Infinity;
 
   const has = (code: string): boolean => pressed.has(code);
 
@@ -75,7 +100,10 @@ export function createKeyboardInput(win: Window, sink: InputSink): KeyboardInput
       if (moveTarget === null) moveTarget = sink.activePlayer();
       sink.push({ type: 'move', player: moveTarget, x: v.x, z: v.z });
       lastMove = v;
-      if (v.x === 0 && v.z === 0) moveTarget = null;
+      if (v.x === 0 && v.z === 0) {
+        moveTarget = null;
+        manualUntil = sink.now() + MANUAL_RESUME_MS;
+      }
     }
     if (swingTarget !== null) {
       const aim = currentAim(teamOf(swingTarget));
@@ -84,6 +112,15 @@ export function createKeyboardInput(win: Window, sink: InputSink): KeyboardInput
         sink.push({ type: 'aim', player: swingTarget, aim });
       }
     }
+  }
+
+  /** Tryb asysty: stuknięcie spacją – zamach i puszczenie od razu, siła stała. */
+  function tapSwing(): void {
+    const player = sink.activePlayer();
+    const serving = sink.isServing?.(player) ?? false;
+    const aim = currentAim(teamOf(player));
+    sink.push({ type: 'swing', player, aim, power: assistSwingPower(serving) });
+    sink.push({ type: 'release', player });
   }
 
   function startSwing(): void {
@@ -106,7 +143,8 @@ export function createKeyboardInput(win: Window, sink: InputSink): KeyboardInput
     if (isTyping(e.target)) return;
     if (e.code === SWING_CODE) {
       e.preventDefault();
-      if (swingTarget === null) startSwing();
+      if (mode === 'assist') tapSwing();
+      else if (swingTarget === null) startSwing();
       return;
     }
     if (!MOVE_CODES.has(e.code)) return;
@@ -143,6 +181,9 @@ export function createKeyboardInput(win: Window, sink: InputSink): KeyboardInput
   return {
     hold() {
       return swingTarget !== null ? { aim: sentAim, sinceMs: swingAt } : null;
+    },
+    manualSteering(now) {
+      return lastMove.x !== 0 || lastMove.z !== 0 || now < manualUntil;
     },
     dispose() {
       win.removeEventListener('keydown', onKeyDown);

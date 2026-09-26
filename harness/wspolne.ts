@@ -79,6 +79,8 @@ export interface SimStateView {
   score: { points: [number, number]; setWinner: TeamId | -1 };
   active: PlayerId;
   humanControl: boolean;
+  /** F0b: tryb asysty (false = pełne F0 pod ?sterowanie=reczne albo AI vs AI). */
+  assist: boolean;
   landing: LandingPrediction;
   lastContact: ContactInfo | null;
 }
@@ -89,6 +91,7 @@ export interface PlayerView {
   pos: Vec3;
   /** Tick otwarcia okna zamachu; -1 = brak – harness odczytuje z niego chwilę tapu. */
   swingStartTick: number;
+  grounded: boolean;
 }
 
 /** Haki deweloperskie na `window.__sw3d` – identyczne z docs/22 §1. */
@@ -114,8 +117,20 @@ export interface DevHooks {
   resetFraming(): void;
   /** Stopy zawodnika w pikselach CSS okna (ostatnia klatka) albo null przed pierwszą klatką. */
   screenPos(player: PlayerId): { x: number; y: number } | null;
-  /** Czy pętla stoi (nakładka „Obróć telefon”). */
-  paused(): boolean;
+  /** F0b: 'assist' albo 'manual' (?sterowanie=reczne). */
+  controlMode(): 'assist' | 'manual';
+  /** F0b: tempo pętli (1 albo w stronę 0,6 tuż przed kontaktem aktywnego). */
+  tempo(): number;
+  /** F0b: czy ruchem steruje palec (asysta czeka). */
+  manualSteering(): boolean;
+  /** F0b: szansa na atak ze skokiem (pierścień jasnoniebieski, napis w HUD). */
+  jumpChance(): boolean;
+  /** F0b: liczniki samouczka; null w trybie ręcznym. */
+  tutorial(): { counts: Record<'tap' | 'flick' | 'jump', number>; current: string | null } | null;
+  /** F0b: czy po pierwszym dotyku poszła prośba o pełny ekran. */
+  fullscreenRequested(): boolean;
+  /** F0b: widoczny prostokąt okna (visualViewport) w px CSS. */
+  viewport(): { width: number; height: number; top: number; left: number };
 }
 
 /**
@@ -171,9 +186,11 @@ export interface HarnessArgs {
   seed: number | null;
   /** Rozmiar okna „SZERxWYS” (np. 844x390) – nadpisuje domyślny ekran skryptu. */
   ekran: { width: number; height: number } | null;
+  /** F0b: pełne sterowanie F0 (?sterowanie=reczne) zamiast asysty – pomiar „przed”. */
+  reczne: boolean;
 }
 
-const FLAGS = new Set(['headless', 'build', 'vsync']);
+const FLAGS = new Set(['headless', 'build', 'vsync', 'reczne']);
 const VALUES = new Set(['url', 'sekundy', 'proby', 'seed', 'ekran']);
 
 export function parseArgs(argv: readonly string[] = process.argv.slice(2)): HarnessArgs {
@@ -186,6 +203,7 @@ export function parseArgs(argv: readonly string[] = process.argv.slice(2)): Harn
     proby: null,
     seed: null,
     ekran: null,
+    reczne: false,
   };
   const raw = new Map<string, string | true>();
   for (let i = 0; i < argv.length; i++) {
@@ -221,6 +239,7 @@ export function parseArgs(argv: readonly string[] = process.argv.slice(2)): Harn
   args.headless = raw.get('headless') === true;
   args.build = raw.get('build') === true;
   args.vsync = raw.get('vsync') === true;
+  args.reczne = raw.get('reczne') === true;
   args.sekundy = num('sekundy');
   args.proby = num('proby');
   args.seed = num('seed');
@@ -380,12 +399,12 @@ export interface ContextSpec {
   hasTouch: boolean;
 }
 
-/** Telefon w pionie, 390 × 844 – ekran budżetu z CLAUDE.md. */
+/** Telefon w pionie, 390 × 844 – ekran budżetu z CLAUDE.md i główny tryb gry na telefonie (F0b). */
 export function mobileSpec(deviceScaleFactor: number): ContextSpec {
   return { width: 390, height: 844, deviceScaleFactor, isMobile: true, hasTouch: true };
 }
 
-/** Ten sam telefon w poziomie, 844 × 390 – orientacja, w której gra się naprawdę. */
+/** Ten sam telefon w poziomie, 844 × 390. */
 export function landscapeSpec(deviceScaleFactor: number): ContextSpec {
   return { width: 844, height: 390, deviceScaleFactor, isMobile: true, hasTouch: true };
 }
@@ -400,19 +419,9 @@ export function phoneSpec(
   return { ...args.ekran, deviceScaleFactor, isMobile: true, hasTouch: true };
 }
 
-/**
- * Nakładka „Obróć telefon” zatrzymuje grę na telefonie w pionie. Pomiar w pionie
- * przechodzi przez furtkę „Graj mimo to” – tę samą, którą ma dziecko z blokadą obrotu.
- * Zwraca, czy nakładka była widoczna.
- */
-export async function passRotateGate(page: Page): Promise<boolean> {
-  const button = page.getByRole('button', { name: 'Graj mimo to' });
-  if (!(await button.isVisible())) return false;
-  await button.click();
-  await page.waitForFunction(() => window.__sw3d?.paused() === false, undefined, {
-    timeout: 5000,
-  });
-  return true;
+/** Parametry adresu trybu sterowania: tryb ręczny (pełne F0) albo nic (asysta F0b). */
+export function controlQuery(reczne: boolean): Record<string, string> {
+  return reczne ? { sterowanie: 'reczne' } : {};
 }
 
 export const DESKTOP_SPEC: ContextSpec = {

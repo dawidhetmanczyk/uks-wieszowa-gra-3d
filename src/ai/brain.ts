@@ -253,10 +253,15 @@ function partnerShouldChase(
   partner: PlayerId,
   ai: AiState,
 ): boolean {
+  // Tryb asysty F0b: pierwsze odbicie naszej akcji należy do człowieka – bez jego stuknięcia
+  // drużyna gracza nie może odbić piłki (decyzja Dawida, pomiar „gra nie gra sama”). Asysta
+  // i tak prowadzi aktywnego do piłki, więc ratunek partnera przestaje być potrzebny.
+  const team = teamOf(partner);
+  if (sim.assist && !(sim.rally.sideOfBall === team && sim.rally.touches > 0)) return false;
   const pb = ai.brains[partner];
   if (pb.perceived === null) return false;
   if (sim.rally.lastToucher === partner) return false;
-  if (!perceivedOnOwnSide(pb.perceived, teamOf(partner))) return false;
+  if (!perceivedOnOwnSide(pb.perceived, team)) return false;
   if (sim.rally.lastToucher === human) return true;
   const timeToLanding = Math.max(0, (pb.perceivedLandingTick - sim.tick) / TICK_HZ);
   const humanTime = distXZ(sim.players[human].pos, pb.perceived) / PLAYER_MAX_SPEED;

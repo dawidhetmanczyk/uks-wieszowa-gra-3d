@@ -70,6 +70,13 @@ export const SWING_HOLD_MAX_S = 0.8;
 export const SWING_GRACE_S = 0.12;
 /** Po pudle zawodnik nie może zamachnąć się ponownie. F0. */
 export const SWING_WHIFF_COOLDOWN_S = 0.3;
+/**
+ * [F0b] Okno po stuknięciu w trybie asysty (tylko zamach aktywnego człowieka). Decyzja Dawida
+ * 3: skuteczne okno ≥ 450 ms (w F0 ok. 225 ms). Stuknięcie przed dolotem działa, jeśli piłka
+ * wejdzie w zasięg w tym czasie; stuknięcie po wejściu – dopóki piłka jest w zasięgu, bo przy
+ * asyście ciało pary nie odbija piłki (ball.ts). Wartość z pomiaru – docs/RAPORT-F0b.md.
+ */
+export const ASSIST_SWING_GRACE_S = 0.3;
 /** Czas trzymania, po którym siła = 1 (bomba). Krótko = plas. */
 export const POWER_FULL_HOLD_S = 0.6;
 /** Minimalny czas trzymania, poniżej którego siła = 0. */
@@ -94,6 +101,11 @@ export const SERVE_LOB_APEX_MAX = 2.6;
 export const SERVE_LOB_APEX_MIN = 1.2;
 /** Wysokość, na której tor opadającej piłki wyznacza punkt przyjęcia (środek pasma przyjęcia). F0. */
 export const INTERCEPT_HEIGHT = 1.1;
+/**
+ * [F0b] „Przy siatce” dla znaku skoku (decyzja Dawida 5): punkt przyjęcia nie dalej od siatki
+ * niż linia ataku z przepisów siatkówki (3 m).
+ */
+export const ATTACK_LINE_DEPTH = 3;
 
 // Zasady (docs/20 §2) ----------------------------------------------------
 export const MAX_TOUCHES = 3;

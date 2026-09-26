@@ -24,7 +24,8 @@
     "harness:przyjecie": "tsx harness/przyjecie.ts",
     "harness:zrzuty": "tsx harness/zrzuty.ts",
     "harness:kadr": "tsx harness/kadr.ts",
-    "harness:sterowanie": "tsx harness/sterowanie.ts"
+    "harness:sterowanie": "tsx harness/sterowanie.ts",
+    "harness:sam": "tsx harness/sam.ts"
   },
   "dependencies": {
     "three": "^0.185.1"

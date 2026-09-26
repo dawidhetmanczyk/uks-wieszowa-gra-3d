@@ -9,11 +9,15 @@
  * biegnie do pierścienia, nie liczy toru: przy płaskim torze lądowanie leży 1–3 m za
  * miejscem przyjęcia i kto stanął na nim, dostawał piłkę przy kolanach. Punkt lądowania
  * zostaje czytelny z cienia piłki (actors.ts), który sunie pod piłką i kończy w nim.
+ *
+ * F0b (decyzja Dawida 5): przy szansie na atak ze skokiem (jumpAttackChance) pierścień
+ * zmienia kolor na jasnoniebieski – razem z napisem „Stuknij – skok sam” w HUD. Tylko
+ * w trybie asysty; tryb ręczny (pełne F0) zostaje bursztynowy.
  */
-import { Group, Mesh, MeshBasicMaterial, RingGeometry } from 'three';
-import { defaultAttackTarget } from '../sim/index';
+import { Color, Group, Mesh, MeshBasicMaterial, RingGeometry } from 'three';
+import { defaultAttackTarget, jumpAttackChance } from '../sim/index';
 import type { SimState } from '../sim/index';
-import { COLOR_ACTIVE, COLOR_AIM, COLOR_STAND } from './colors';
+import { COLOR_ACTIVE, COLOR_AIM, COLOR_JUMP, COLOR_STAND } from './colors';
 import { buildFlatRects } from './court';
 import type { ViewState } from './index';
 
@@ -58,6 +62,9 @@ export function createMarkers(): Markers {
   const standRing = new Mesh(standGeometry, standMaterial);
   standRing.visible = false;
   group.add(standRing);
+  const standColor = new Color(COLOR_STAND);
+  const jumpColor = new Color(COLOR_JUMP);
+  let jumpShown = false;
 
   const activeGeometry = flatRing(ACTIVE_R);
   const activeMaterial = markerMaterial(COLOR_ACTIVE);
@@ -98,6 +105,11 @@ export function createMarkers(): Markers {
         // Punkt przyjęcia na 1,1 m; gdy piłka jest już niżej, sim podaje jej bieżące
         // położenie – pierścień jedzie wtedy pod piłką aż do podłogi.
         standRing.position.set(landing.intercept.x, STAND_Y, landing.intercept.z);
+      }
+      const jump = standRing.visible && state.assist && jumpAttackChance(state);
+      if (jump !== jumpShown) {
+        jumpShown = jump;
+        standMaterial.color.copy(jump ? jumpColor : standColor);
       }
 
       const active = state.players[state.active];

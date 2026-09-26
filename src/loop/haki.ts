@@ -5,8 +5,10 @@
  */
 import { DT, reachWindow, type PlayerId, type SimState, type TeamId } from '../sim/index';
 import type { FramingStats, ResolvedRenderOptions } from '../render/index';
+import type { ControlMode } from '../input/index';
+import type { HintId, TutorialCounts } from '../ui/index';
 
-export const DEV_HOOKS_VERSION = '0.0.1-f0';
+export const DEV_HOOKS_VERSION = '0.0.2-f0b';
 
 export interface NewSetOptions {
   /** Domyślnie poprzednie ziarno + 1. */
@@ -50,8 +52,20 @@ export interface DevHooks {
   resetFraming(): void;
   /** Stopy zawodnika w px CSS okna – test sterowania „w prawo na ekranie” (harness/sterowanie.ts). */
   screenPos(player: PlayerId): { x: number; y: number } | null;
-  /** Czy pętla stoi (nakładka „Obróć telefon” na telefonie w pionie). */
-  paused(): boolean;
+  /** F0b: 'assist' (domyślnie) albo 'manual' – pełne F0 pod ?sterowanie=reczne. */
+  controlMode(): ControlMode;
+  /** F0b: bieżące tempo pętli – 1, a tuż przed kontaktem aktywnego w stronę 0,6. */
+  tempo(): number;
+  /** F0b: czy ruchem steruje teraz palec / klawisze (asysta czeka). Poza trybem asysty false. */
+  manualSteering(): boolean;
+  /** F0b: szansa na atak ze skokiem – pierścień jasnoniebieski i napis w HUD. */
+  jumpChance(): boolean;
+  /** F0b: liczniki samouczka i bieżąca podpowiedź; null w trybie ręcznym (bez samouczka). */
+  tutorial(): { counts: TutorialCounts; current: HintId | null } | null;
+  /** F0b: czy po pierwszym dotyku poszła prośba o pełny ekran (Android). */
+  fullscreenRequested(): boolean;
+  /** F0b: widoczny prostokąt okna (visualViewport) w px CSS, w którym leży gra. */
+  viewport(): { width: number; height: number; top: number; left: number };
 }
 
 declare global {

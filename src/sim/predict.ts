@@ -7,6 +7,7 @@
  */
 import { predictLanding, PREDICT_MAX_S, stepBall } from './ballistics';
 import {
+  ATTACK_LINE_DEPTH,
   BALL_R,
   DT,
   NET_CONTACT_TOLERANCE_Z,
@@ -46,6 +47,24 @@ export function canReach(state: SimState, player: PlayerId): boolean {
   if (state.ball.held !== -1) return false;
   const p = state.players[player];
   return inReach(state.ball.pos, p.pos, p.team);
+}
+
+/**
+ * [F0b] Szansa na atak przy siatce dla aktywnego (decyzja Dawida 5 – znak skoku): partner
+ * wystawił (po naszej stronie są już 2 odbicia, więc następne to atak), aktywny może dotknąć
+ * piłki, a punkt przyjęcia („tu stań”) leży przy siatce – nie dalej niż linia ataku. Wystawa
+ * opada stromo z ~5 m, więc w tym miejscu piłka wchodzi w zasięg od góry i sim robi auto-skok.
+ */
+export function jumpAttackChance(state: SimState): boolean {
+  const rally = state.rally;
+  if (rally.phase !== 'rally' || state.ball.held !== -1) return false;
+  const landing = state.landing;
+  if (!landing.valid || landing.hitsNet) return false;
+  const team = state.players[state.active].team;
+  if (rally.sideOfBall !== team || rally.touches !== 2) return false;
+  if (rally.lastToucher === state.active) return false;
+  if (sideOf(landing.pos.z) !== team) return false;
+  return Math.abs(landing.intercept.z) <= ATTACK_LINE_DEPTH;
 }
 
 /** Odświeża `state.landing` bez alokacji; piłka w ręce = brak predykcji. */
